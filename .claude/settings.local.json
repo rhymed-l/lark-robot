@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:open.feishu.cn)",
+      "Bash(go mod init:*)",
+      "Bash(cmd /c \"cd /d c:\\\\Users\\\\me\\\\IdeaProjects\\\\lark-robot && go mod init lark-robot\")",
+      "Bash(cmd /c \"cd /d c:\\\\Users\\\\me\\\\IdeaProjects\\\\lark-robot && go version && dir go.mod\")",
+      "Bash(cmd /c \"cd /d c:\\\\Users\\\\me\\\\IdeaProjects\\\\lark-robot && go version\")",
+      "Bash(cmd /c \"echo %PATH%\")",
+      "Bash(go mod tidy:*)",
+      "Bash(go build:*)"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+server:
+  port: 8080
+  mode: debug   # debug or release
+
+auth:
+  username: "admin"
+  password: "admin123"
+  secret: "change-me-to-a-random-string"
+
+lark:
+  app_id: "cli_xxxxxxxxxx"
+  app_secret: "xxxxxxxxxxxxxxxxxxxxxxxx"
+  base_url: "https://open.feishu.cn"  # or https://open.larksuite.com
+
+database:
+  path: "./data/lark-robot.db"
+
+log:
+  level: "info"   # debug, info, warn, error
+  file: ""        # empty = stdout only

@@ -1,0 +1,23 @@
+# Binary
+lark-robot.exe
+lark-robot
+
+# Config (contains secrets)
+config.yaml
+
+# Database
+data/
+
+# Frontend build (embedded at compile time)
+static/dist/*
+!static/dist/.gitkeep
+web/dist/
+web/node_modules/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
