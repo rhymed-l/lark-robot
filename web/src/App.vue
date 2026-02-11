@@ -14,11 +14,16 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, computed, provide, onMounted, onUnmounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { h, reactive, computed, provide, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import Sidebar from './components/Sidebar.vue'
-import { getToken } from './api/client'
+import { getToken, getChats, getConversations } from './api/client'
+
+const router = useRouter()
+
+// Chat name cache for notifications
+const chatNameCache = reactive<Record<string, string>>({})
 
 const route = useRoute()
 const isLoginPage = computed(() => route.path === '/login')
@@ -75,21 +80,51 @@ const connectGlobalSSE = () => {
       // Increment per-chat unread
       unreadMap[chatId] = (unreadMap[chatId] || 0) + 1
 
-      // Browser notification
+      const senderName = msg.sender_name || ''
+      const msgText = parseContent(msg.content)
+      const isGroup = msg.chat_type === 'group'
+
+      // Auto-refresh cache for unknown chats
+      if (!chatNameCache[chatId]) {
+        if (isGroup) {
+          // Async fetch group name (will be available for next notification)
+          loadChatNames()
+        } else if (senderName) {
+          chatNameCache[chatId] = senderName
+        }
+      }
+
+      const chatName = chatNameCache[chatId] || (isGroup ? '群聊' : senderName || '私聊')
+
+      // Build notification title: "[群名] 用户名" or "用户名 (私聊)"
+      const notifyTitle = isGroup
+        ? `[${chatName}] ${senderName || '新消息'}`
+        : `${senderName || chatName}`
+
+      // Browser notification (click to focus window)
       if (Notification.permission === 'granted') {
-        const senderName = msg.sender_name || '新消息'
-        new Notification(`飞书机器人 - ${senderName}`, {
-          body: parseContent(msg.content),
+        const n = new Notification(notifyTitle, {
+          body: msgText,
           icon: '/favicon.ico',
           tag: 'lark-msg-' + msg.id,
         })
+        n.onclick = () => {
+          window.focus()
+          router.push(`/chat/${chatId}`)
+        }
       }
 
-      // In-app notification
-      const senderName = msg.sender_name || ''
-      ElNotification({
-        title: senderName ? `${senderName} 发来消息` : '新消息',
-        message: parseContent(msg.content),
+      // In-app notification (click to jump to chat)
+      let notifyInstance: any = null
+      notifyInstance = ElNotification({
+        title: notifyTitle,
+        message: h('div', {
+          style: 'cursor: pointer',
+          onClick: () => {
+            router.push(`/chat/${chatId}`)
+            notifyInstance?.close()
+          },
+        }, msgText),
         type: 'info',
         duration: 3000,
         position: 'bottom-right',
@@ -110,15 +145,38 @@ const connectGlobalSSE = () => {
 }
 
 // Reconnect SSE when navigating away from login (i.e., after login)
-watch(isLoginPage, (isLogin) => {
-  if (!isLogin) connectGlobalSSE()
+watch(isLoginPage, async (isLogin) => {
+  if (!isLogin) {
+    await loadChatNames()
+    connectGlobalSSE()
+  }
 })
 
-onMounted(() => {
+const loadChatNames = async () => {
+  try {
+    const groupRes = await getChats({ page: 1, page_size: 100 })
+    for (const g of (groupRes.data.data || [])) {
+      if (g.name) chatNameCache[g.chat_id] = g.name
+    }
+    const convRes = await getConversations()
+    for (const c of (convRes.data.data || [])) {
+      if (c.chat_type === 'p2p' && c.sender_name) {
+        chatNameCache[c.chat_id] = c.sender_name
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+onMounted(async () => {
   if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission()
   }
-  if (!isLoginPage.value) connectGlobalSSE()
+  if (!isLoginPage.value) {
+    await loadChatNames()
+    connectGlobalSSE()
+  }
 })
 
 onUnmounted(() => {

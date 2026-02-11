@@ -13,6 +13,11 @@
           <el-tag size="small">{{ matchModeLabel(row.match_mode) }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="触发条件" width="120">
+        <template #default="{ row }">
+          <el-tag :type="triggerModeType(row.trigger_mode)" size="small">{{ triggerModeLabel(row.trigger_mode) }}</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="适用范围" width="200">
         <template #default="{ row }">
           <span v-if="!row.chat_id">全部</span>
@@ -58,6 +63,13 @@
               </el-tag>
             </el-tooltip>
           </div>
+        </el-form-item>
+        <el-form-item label="触发条件">
+          <el-select v-model="form.trigger_mode" style="width: 100%">
+            <el-option label="任何消息" value="any" />
+            <el-option label="仅 @机器人 时" value="at_bot" />
+            <el-option label="仅私聊" value="p2p_only" />
+          </el-select>
         </el-form-item>
         <el-form-item label="适用群组">
           <el-select
@@ -116,6 +128,7 @@ interface Rule {
   reply_text: string
   match_mode: string
   chat_id: string
+  trigger_mode: string
   enabled: boolean
 }
 
@@ -147,6 +160,7 @@ const form = ref({
   keyword: '',
   reply_text: '',
   match_mode: 'contains',
+  trigger_mode: 'any',
   chat_ids: [] as string[],
 })
 
@@ -156,6 +170,16 @@ const groupNameMap = ref<Record<string, string>>({})
 const matchModeLabel = (mode: string) => {
   const map: Record<string, string> = { contains: '包含', exact: '精确', prefix: '前缀' }
   return map[mode] || mode
+}
+
+const triggerModeLabel = (mode: string) => {
+  const map: Record<string, string> = { any: '任何消息', at_bot: '@机器人', p2p_only: '仅私聊' }
+  return map[mode] || mode || '任何消息'
+}
+
+const triggerModeType = (mode: string) => {
+  const map: Record<string, string> = { any: '', at_bot: 'warning', p2p_only: 'success' }
+  return map[mode] || ''
 }
 
 const formatChatIds = (chatId: string): string => {
@@ -213,11 +237,12 @@ const showDialog = (rule?: Rule) => {
       keyword: rule.keyword,
       reply_text: rule.reply_text,
       match_mode: rule.match_mode,
+      trigger_mode: rule.trigger_mode || 'any',
       chat_ids: rule.chat_id ? rule.chat_id.split(',') : [],
     }
   } else {
     editingRule.value = null
-    form.value = { keyword: '', reply_text: '', match_mode: 'contains', chat_ids: [] }
+    form.value = { keyword: '', reply_text: '', match_mode: 'contains', trigger_mode: 'any', chat_ids: [] }
   }
   dialogVisible.value = true
 }
@@ -232,6 +257,7 @@ const handleSubmit = async () => {
     keyword: form.value.keyword,
     reply_text: form.value.reply_text,
     match_mode: form.value.match_mode,
+    trigger_mode: form.value.trigger_mode,
     chat_id: form.value.chat_ids.join(','),
   }
   try {

@@ -74,12 +74,13 @@ func toKeywordRules(rules []model.AutoReplyRule) []handler.KeywordRule {
 	result := make([]handler.KeywordRule, len(rules))
 	for i, r := range rules {
 		result[i] = handler.KeywordRule{
-			ID:        r.ID,
-			Keyword:   r.Keyword,
-			ReplyText: r.ReplyText,
-			MatchMode: r.MatchMode,
-			ChatID:    r.ChatID,
-			Enabled:   r.Enabled,
+			ID:          r.ID,
+			Keyword:     r.Keyword,
+			ReplyText:   r.ReplyText,
+			MatchMode:   r.MatchMode,
+			ChatID:      r.ChatID,
+			TriggerMode: r.TriggerMode,
+			Enabled:     r.Enabled,
 		}
 	}
 	return result

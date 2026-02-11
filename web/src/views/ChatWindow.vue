@@ -114,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, inject, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChatDotRound } from '@element-plus/icons-vue'
 import { getChats, getConversations, getMessageLogs, sendMessage, getToken } from '../api/client'
@@ -329,6 +329,27 @@ onMounted(async () => {
     if (!groups.value.find((g) => g.chat_id === chatId)) {
       activeTab.value = 'private'
     }
+    clearChatUnread(chatId)
+    loadHistory()
+    connectSSE()
+  }
+})
+
+// Watch for route param changes (e.g., clicking notification while on chat page)
+watch(() => route.params.chatId, (newChatId) => {
+  if (newChatId && newChatId !== activeChatId.value) {
+    const chatId = newChatId as string
+    activeChatId.value = chatId
+    activeChatName.value = (route.query.name as string) || chatId
+    const match = groups.value.find((g) => g.chat_id === chatId)
+      || privateChats.value.find((c) => c.chat_id === chatId)
+    if (match) activeChatName.value = match.name || chatId
+    if (!groups.value.find((g) => g.chat_id === chatId)) {
+      activeTab.value = 'private'
+    } else {
+      activeTab.value = 'group'
+    }
+    messages.value = []
     clearChatUnread(chatId)
     loadHistory()
     connectSSE()

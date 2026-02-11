@@ -73,6 +73,28 @@ func (s *ChatService) LeaveChat(ctx context.Context, chatID string) error {
 	return s.repo.DeleteByChatID(chatID)
 }
 
+// AutoSyncGroup checks if a group exists locally, if not fetches its info and saves it.
+func (s *ChatService) AutoSyncGroup(ctx context.Context, chatID string) {
+	_, err := s.repo.GetByChatID(chatID)
+	if err == nil {
+		return // already synced
+	}
+	chatInfo, err := s.larkClient.GetChatInfo(ctx, chatID)
+	if err != nil {
+		s.logger.Debug("auto-sync group failed", zap.String("chat_id", chatID), zap.Error(err))
+		return
+	}
+	_ = s.repo.Upsert(&model.Group{
+		ChatID:      chatInfo.ChatID,
+		Name:        chatInfo.Name,
+		Description: chatInfo.Description,
+		OwnerID:     chatInfo.OwnerID,
+		External:    chatInfo.External,
+		SyncedAt:    time.Now(),
+	})
+	s.logger.Info("auto-synced group", zap.String("chat_id", chatID), zap.String("name", chatInfo.Name))
+}
+
 // GroupCount returns the number of groups in the database.
 func (s *ChatService) GroupCount() (int64, error) {
 	return s.repo.Count()

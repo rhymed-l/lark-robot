@@ -9,12 +9,13 @@ import (
 
 // KeywordRule defines a single keyword-to-reply mapping.
 type KeywordRule struct {
-	ID        uint
-	Keyword   string
-	ReplyText string
-	MatchMode string // "exact", "contains", "prefix"
-	ChatID    string // empty = all chats
-	Enabled   bool
+	ID          uint
+	Keyword     string
+	ReplyText   string
+	MatchMode   string // "exact", "contains", "prefix"
+	ChatID      string // empty = all chats
+	TriggerMode string // "any", "at_bot", "p2p_only"
+	Enabled     bool
 }
 
 // KeywordHandler checks incoming text against a set of keyword rules.
@@ -36,7 +37,11 @@ func (h *KeywordHandler) UpdateRules(rules []KeywordRule) {
 }
 
 func (h *KeywordHandler) Handle(ctx context.Context, msg *IncomingMessage) (*Result, error) {
-	if msg.MsgType != "text" {
+	// Support both plain text and rich text (post) messages
+	if msg.MsgType != "text" && msg.MsgType != "post" {
+		return &Result{Handled: false}, nil
+	}
+	if msg.TextContent == "" {
 		return &Result{Handled: false}, nil
 	}
 
@@ -49,6 +54,17 @@ func (h *KeywordHandler) Handle(ctx context.Context, msg *IncomingMessage) (*Res
 		}
 		if rule.ChatID != "" && !matchChatID(rule.ChatID, msg.ChatID) {
 			continue
+		}
+		// Check trigger mode
+		switch rule.TriggerMode {
+		case "at_bot":
+			if msg.ChatType != "p2p" && !msg.MentionBot {
+				continue
+			}
+		case "p2p_only":
+			if msg.ChatType != "p2p" {
+				continue
+			}
 		}
 		if matchKeyword(msg.TextContent, rule.Keyword, rule.MatchMode) {
 			replyText := renderTemplate(rule.ReplyText, msg)

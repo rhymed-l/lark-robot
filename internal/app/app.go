@@ -65,8 +65,13 @@ func New(cfg *config.Config) (*App, error) {
 	logRepo := repository.NewMessageLogRepo(db)
 	groupRepo := repository.NewGroupRepo(db)
 
-	// 4. Create Lark client
+	// 4. Create Lark client and fetch bot info
 	larkClient := larkbot.NewLarkClient(cfg.Lark.AppID, cfg.Lark.AppSecret, cfg.Lark.BaseURL)
+	if err := larkClient.FetchBotInfo(context.Background()); err != nil {
+		logger.Warn("failed to fetch bot info", zap.Error(err))
+	} else {
+		logger.Info("bot info loaded", zap.String("open_id", larkClient.BotOpenID))
+	}
 
 	// 5. Create message service
 	msgService := service.NewMessageService(larkClient, logRepo, logger)
@@ -100,7 +105,12 @@ func New(cfg *config.Config) (*App, error) {
 	// 10. Set up Lark event dispatcher (WebSocket long connection)
 	eventDispatcher := dispatcher.NewEventDispatcher("", "").
 		OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
-			msg := parseIncomingMessage(event)
+			msg := parseIncomingMessage(event, larkClient.BotOpenID)
+
+			// Auto-sync group if not yet in DB
+			if msg.ChatType == "group" {
+				go chatService.AutoSyncGroup(ctx, msg.ChatID)
+			}
 
 			// Resolve sender name
 			userInfo, err := larkClient.GetUserInfo(ctx, msg.SenderID)
@@ -248,7 +258,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func parseIncomingMessage(event *larkim.P2MessageReceiveV1) *handler.IncomingMessage {
+func parseIncomingMessage(event *larkim.P2MessageReceiveV1, botOpenID string) *handler.IncomingMessage {
 	msg := event.Event.Message
 	senderID := ""
 	if event.Event.Sender != nil && event.Event.Sender.SenderId != nil {
@@ -266,7 +276,7 @@ func parseIncomingMessage(event *larkim.P2MessageReceiveV1) *handler.IncomingMes
 		MsgType:     deref(msg.MessageType),
 		Content:     content,
 		TextContent: textContent,
-		MentionBot:  containsBotMention(msg.Mentions),
+		MentionBot:  containsBotMention(msg.Mentions, botOpenID),
 	}
 }
 
@@ -275,18 +285,50 @@ func extractText(content string) string {
 	if err := json.Unmarshal([]byte(content), &m); err != nil {
 		return content
 	}
+	// Plain text message: {"text":"hello"}
 	if text, ok := m["text"].(string); ok {
 		return strings.TrimSpace(text)
+	}
+	// Rich text (post) message: {"title":"","content":[[{"tag":"text","text":"hello"},...]]}
+	if contentArr, ok := m["content"].([]interface{}); ok {
+		return extractPostText(contentArr)
 	}
 	return ""
 }
 
-func containsBotMention(mentions []*larkim.MentionEvent) bool {
-	for _, m := range mentions {
-		if m.Key != nil && *m.Key == "at_all" {
+// extractPostText extracts plain text from a post message's content array.
+func extractPostText(content []interface{}) string {
+	var sb strings.Builder
+	for _, line := range content {
+		lineArr, ok := line.([]interface{})
+		if !ok {
 			continue
 		}
-		if m.Id != nil && m.Id.OpenId != nil {
+		for _, elem := range lineArr {
+			elemMap, ok := elem.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			tag, _ := elemMap["tag"].(string)
+			switch tag {
+			case "text":
+				if text, ok := elemMap["text"].(string); ok {
+					sb.WriteString(text)
+				}
+			case "at":
+				// Skip @mentions in text extraction
+			}
+		}
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+func containsBotMention(mentions []*larkim.MentionEvent, botOpenID string) bool {
+	if botOpenID == "" {
+		return false
+	}
+	for _, m := range mentions {
+		if m.Id != nil && m.Id.OpenId != nil && *m.Id.OpenId == botOpenID {
 			return true
 		}
 	}

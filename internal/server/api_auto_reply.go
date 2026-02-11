@@ -51,11 +51,12 @@ func (api *AutoReplyAPI) GetByID(c *gin.Context) {
 }
 
 type CreateAutoReplyRequest struct {
-	Keyword   string `json:"keyword" binding:"required"`
-	ReplyText string `json:"reply_text" binding:"required"`
-	MatchMode string `json:"match_mode"`
-	ChatID    string `json:"chat_id"`
-	Enabled   *bool  `json:"enabled"`
+	Keyword     string `json:"keyword" binding:"required"`
+	ReplyText   string `json:"reply_text" binding:"required"`
+	MatchMode   string `json:"match_mode"`
+	TriggerMode string `json:"trigger_mode"`
+	ChatID      string `json:"chat_id"`
+	Enabled     *bool  `json:"enabled"`
 }
 
 func (api *AutoReplyAPI) Create(c *gin.Context) {
@@ -66,14 +67,18 @@ func (api *AutoReplyAPI) Create(c *gin.Context) {
 	}
 
 	rule := &model.AutoReplyRule{
-		Keyword:   req.Keyword,
-		ReplyText: req.ReplyText,
-		MatchMode: req.MatchMode,
-		ChatID:    req.ChatID,
-		Enabled:   true,
+		Keyword:     req.Keyword,
+		ReplyText:   req.ReplyText,
+		MatchMode:   req.MatchMode,
+		TriggerMode: req.TriggerMode,
+		ChatID:      req.ChatID,
+		Enabled:     true,
 	}
 	if rule.MatchMode == "" {
 		rule.MatchMode = "contains"
+	}
+	if rule.TriggerMode == "" {
+		rule.TriggerMode = "any"
 	}
 	if req.Enabled != nil {
 		rule.Enabled = *req.Enabled
@@ -109,6 +114,9 @@ func (api *AutoReplyAPI) Update(c *gin.Context) {
 	rule.ReplyText = req.ReplyText
 	if req.MatchMode != "" {
 		rule.MatchMode = req.MatchMode
+	}
+	if req.TriggerMode != "" {
+		rule.TriggerMode = req.TriggerMode
 	}
 	rule.ChatID = req.ChatID
 	if req.Enabled != nil {

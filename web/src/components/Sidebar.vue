@@ -1,6 +1,6 @@
 <template>
-  <div style="padding: 20px 0; text-align: center; color: #fff; font-size: 16px; font-weight: bold;">
-    飞书机器人
+  <div class="sidebar-header">
+    <span class="sidebar-title">飞书机器人</span>
   </div>
   <el-menu
     :default-active="activeMenu"
@@ -40,9 +40,14 @@
     </el-menu-item>
   </el-menu>
   <div class="logout-area">
-    <el-button text style="color: #bfcbd9; width: 100%" @click="handleLogout">
-      退出登录
-    </el-button>
+    <el-popconfirm title="确定退出登录吗？" @confirm="handleLogout" width="160">
+      <template #reference>
+        <el-button text class="logout-btn">
+          <el-icon><SwitchButton /></el-icon>
+          <span style="margin-left: 4px">退出登录</span>
+        </el-button>
+      </template>
+    </el-popconfirm>
   </div>
 </template>
 
@@ -57,6 +62,7 @@ import {
   Promotion,
   Document,
   List,
+  SwitchButton,
 } from '@element-plus/icons-vue'
 import { logout } from '../api/client'
 
@@ -74,12 +80,30 @@ const handleLogout = () => {
 </script>
 
 <style scoped>
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 12px;
+}
+.sidebar-title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: bold;
+}
 .logout-area {
   position: absolute;
   bottom: 12px;
   width: 100%;
-  padding: 0 12px;
+  padding: 0 16px;
   box-sizing: border-box;
+}
+.logout-btn {
+  color: #bfcbd9 !important;
+  font-size: 13px;
+}
+.logout-btn:hover {
+  color: #f56c6c !important;
 }
 .chat-badge {
   margin-left: 4px;

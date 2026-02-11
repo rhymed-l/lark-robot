@@ -68,6 +68,7 @@ export const createAutoReplyRule = (data: {
   keyword: string
   reply_text: string
   match_mode?: string
+  trigger_mode?: string
   chat_id?: string
   enabled?: boolean
 }) => api.post('/auto-reply-rules', data)
@@ -75,6 +76,7 @@ export const updateAutoReplyRule = (id: number, data: {
   keyword: string
   reply_text: string
   match_mode?: string
+  trigger_mode?: string
   chat_id?: string
   enabled?: boolean
 }) => api.put(`/auto-reply-rules/${id}`, data)
