@@ -7,15 +7,16 @@
 
     <el-table :data="rules" stripe v-loading="loading">
       <el-table-column prop="keyword" label="关键词" />
-      <el-table-column prop="reply_text" label="回复内容" />
+      <el-table-column prop="reply_text" label="回复内容" show-overflow-tooltip />
       <el-table-column prop="match_mode" label="匹配方式" width="120">
         <template #default="{ row }">
           <el-tag size="small">{{ matchModeLabel(row.match_mode) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="chat_id" label="群 ID" width="200">
+      <el-table-column label="适用范围" width="200">
         <template #default="{ row }">
-          {{ row.chat_id || '全部' }}
+          <span v-if="!row.chat_id">全部</span>
+          <span v-else>{{ formatChatIds(row.chat_id) }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="enabled" label="状态" width="100">
@@ -35,13 +36,10 @@
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialogVisible" :title="editingRule ? '编辑规则' : '添加规则'" width="500px">
+    <el-dialog v-model="dialogVisible" :title="editingRule ? '编辑规则' : '添加规则'" width="560px">
       <el-form :model="form" label-width="100px">
         <el-form-item label="关键词" required>
           <el-input v-model="form.keyword" placeholder="要匹配的关键词" />
-        </el-form-item>
-        <el-form-item label="回复内容" required>
-          <el-input v-model="form.reply_text" type="textarea" :rows="3" placeholder="回复文本" />
         </el-form-item>
         <el-form-item label="匹配方式">
           <el-select v-model="form.match_mode" style="width: 100%">
@@ -50,8 +48,34 @@
             <el-option label="前缀匹配" value="prefix" />
           </el-select>
         </el-form-item>
-        <el-form-item label="群 ID">
-          <el-input v-model="form.chat_id" placeholder="留空表示所有群" />
+        <el-form-item label="回复内容" required>
+          <el-input v-model="form.reply_text" type="textarea" :rows="3" placeholder="回复文本，支持模板变量" />
+          <div class="var-hint">
+            可用变量：
+            <el-tooltip v-for="v in templateVars" :key="v.key" :content="v.desc" placement="top">
+              <el-tag size="small" @click="insertVar(v.key)" class="var-tag" effect="plain">
+                {{ v.key }}
+              </el-tag>
+            </el-tooltip>
+          </div>
+        </el-form-item>
+        <el-form-item label="适用群组">
+          <el-select
+            v-model="form.chat_ids"
+            multiple
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="留空表示所有群/私聊"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="g in groups"
+              :key="g.chat_id"
+              :label="g.name || g.chat_id"
+              :value="g.chat_id"
+            />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -82,6 +106,7 @@ import {
   updateAutoReplyRule,
   deleteAutoReplyRule,
   toggleAutoReplyRule,
+  getChats,
 } from '../api/client'
 import { ElMessage } from 'element-plus'
 
@@ -94,7 +119,22 @@ interface Rule {
   enabled: boolean
 }
 
+interface Group {
+  chat_id: string
+  name: string
+}
+
+const templateVars = [
+  { key: '{{chat_id}}', desc: '会话 ID' },
+  { key: '{{chat_type}}', desc: '会话类型' },
+  { key: '{{sender_id}}', desc: '发送者 ID' },
+  { key: '{{sender_name}}', desc: '发送者名称' },
+  { key: '{{message_id}}', desc: '消息 ID' },
+  { key: '{{content}}', desc: '消息内容' },
+]
+
 const rules = ref<Rule[]>([])
+const groups = ref<Group[]>([])
 const loading = ref(false)
 const page = ref(1)
 const pageSize = ref(10)
@@ -107,12 +147,39 @@ const form = ref({
   keyword: '',
   reply_text: '',
   match_mode: 'contains',
-  chat_id: '',
+  chat_ids: [] as string[],
 })
+
+// Map chatId -> group name for display
+const groupNameMap = ref<Record<string, string>>({})
 
 const matchModeLabel = (mode: string) => {
   const map: Record<string, string> = { contains: '包含', exact: '精确', prefix: '前缀' }
   return map[mode] || mode
+}
+
+const formatChatIds = (chatId: string): string => {
+  if (!chatId) return '全部'
+  const ids = chatId.split(',')
+  return ids.map(id => groupNameMap.value[id] || id.slice(0, 12) + '...').join(', ')
+}
+
+const insertVar = (varKey: string) => {
+  form.value.reply_text += varKey
+}
+
+const loadGroups = async () => {
+  try {
+    const res = await getChats({ page: 1, page_size: 100 })
+    groups.value = res.data.data || []
+    const map: Record<string, string> = {}
+    for (const g of groups.value) {
+      if (g.name) map[g.chat_id] = g.name
+    }
+    groupNameMap.value = map
+  } catch {
+    // ignore
+  }
 }
 
 const loadRules = async () => {
@@ -146,11 +213,11 @@ const showDialog = (rule?: Rule) => {
       keyword: rule.keyword,
       reply_text: rule.reply_text,
       match_mode: rule.match_mode,
-      chat_id: rule.chat_id,
+      chat_ids: rule.chat_id ? rule.chat_id.split(',') : [],
     }
   } else {
     editingRule.value = null
-    form.value = { keyword: '', reply_text: '', match_mode: 'contains', chat_id: '' }
+    form.value = { keyword: '', reply_text: '', match_mode: 'contains', chat_ids: [] }
   }
   dialogVisible.value = true
 }
@@ -161,12 +228,18 @@ const handleSubmit = async () => {
     return
   }
   submitting.value = true
+  const data = {
+    keyword: form.value.keyword,
+    reply_text: form.value.reply_text,
+    match_mode: form.value.match_mode,
+    chat_id: form.value.chat_ids.join(','),
+  }
   try {
     if (editingRule.value) {
-      await updateAutoReplyRule(editingRule.value.id, form.value)
+      await updateAutoReplyRule(editingRule.value.id, data)
       ElMessage.success('规则已更新')
     } else {
-      await createAutoReplyRule(form.value)
+      await createAutoReplyRule(data)
       ElMessage.success('规则已创建')
     }
     dialogVisible.value = false
@@ -197,5 +270,24 @@ const handleDelete = async (id: number) => {
   }
 }
 
-onMounted(loadRules)
+onMounted(async () => {
+  await loadGroups()
+  loadRules()
+})
 </script>
+
+<style scoped>
+.var-hint {
+  margin-top: 6px;
+  line-height: 2;
+}
+.var-tag {
+  cursor: pointer;
+  margin-right: 4px;
+  margin-bottom: 4px;
+}
+.var-tag:hover {
+  color: #409eff;
+  border-color: #409eff;
+}
+</style>

@@ -9,7 +9,9 @@
       "Bash(cmd /c \"cd /d c:\\\\Users\\\\me\\\\IdeaProjects\\\\lark-robot && go version\")",
       "Bash(cmd /c \"echo %PATH%\")",
       "Bash(go mod tidy:*)",
-      "Bash(go build:*)"
+      "Bash(go build:*)",
+      "Bash(npx vue-tsc:*)",
+      "Bash(npm run build:*)"
     ]
   }
 }

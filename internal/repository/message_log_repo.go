@@ -83,6 +83,12 @@ func (r *MessageLogRepo) ListConversations() ([]Conversation, error) {
 	return results, err
 }
 
+// DeleteGroupLogsBefore deletes group chat logs older than the given time. Private chats are not affected.
+func (r *MessageLogRepo) DeleteGroupLogsBefore(before string) (int64, error) {
+	result := r.db.Where("chat_type = 'group' AND created_at < ?", before).Delete(&model.MessageLog{})
+	return result.RowsAffected, result.Error
+}
+
 // GetChatType returns the chat_type for a given chat_id from existing logs, or empty string if unknown.
 func (r *MessageLogRepo) GetChatType(chatID string) string {
 	var chatType string

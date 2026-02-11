@@ -8,14 +8,27 @@
     <el-table :data="tasks" stripe v-loading="loading">
       <el-table-column prop="name" label="任务名称" />
       <el-table-column prop="cron_expr" label="Cron 表达式" width="160" />
-      <el-table-column prop="chat_id" label="目标群 ID" width="200" />
-      <el-table-column prop="msg_type" label="类型" width="80" />
-      <el-table-column prop="enabled" label="状态" width="100">
+      <el-table-column label="发送到" width="160">
+        <template #default="{ row }">
+          {{ groupNameMap[row.chat_id] || row.chat_id }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="msg_type" label="类型" width="80">
+        <template #default="{ row }">
+          {{ row.msg_type === 'text' ? '文本' : '卡片' }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="content" label="内容" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ parseContent(row.content) }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="enabled" label="状态" width="80">
         <template #default="{ row }">
           <el-switch :model-value="row.enabled" @change="handleToggle(row.id)" />
         </template>
       </el-table-column>
-      <el-table-column prop="last_run_at" label="上次执行" width="180">
+      <el-table-column prop="last_run_at" label="上次执行" width="170">
         <template #default="{ row }">
           {{ formatTime(row.last_run_at) }}
         </template>
@@ -39,22 +52,57 @@
           <el-input v-model="form.name" placeholder="任务名称" />
         </el-form-item>
         <el-form-item label="Cron 表达式" required>
-          <el-input v-model="form.cron_expr" placeholder="例如: 0 0 9 * * 1-5（6位含秒）" />
+          <el-input v-model="form.cron_expr" placeholder="例如: 0 0 9 * * 1-5" />
           <div style="color: #909399; font-size: 12px; margin-top: 4px">
-            格式: 秒 分 时 日 月 星期
+            格式: 秒 分 时 日 月 星期。如 <code>0 0 9 * * 1-5</code> = 工作日每天 9 点
           </div>
         </el-form-item>
-        <el-form-item label="目标群 ID" required>
-          <el-input v-model="form.chat_id" placeholder="目标群的 Chat ID" />
-        </el-form-item>
-        <el-form-item label="消息类型">
-          <el-select v-model="form.msg_type" style="width: 100%">
-            <el-option label="文本" value="text" />
-            <el-option label="卡片消息" value="interactive" />
+        <el-form-item label="发送到" required>
+          <el-select
+            v-model="form.chat_id"
+            filterable
+            placeholder="选择群组或私聊"
+            style="width: 100%"
+          >
+            <el-option-group label="群聊">
+              <el-option
+                v-for="g in groups"
+                :key="g.chat_id"
+                :label="g.name || g.chat_id"
+                :value="g.chat_id"
+              />
+            </el-option-group>
+            <el-option-group v-if="privateChats.length > 0" label="私聊">
+              <el-option
+                v-for="c in privateChats"
+                :key="c.chat_id"
+                :label="c.name || c.chat_id"
+                :value="c.chat_id"
+              />
+            </el-option-group>
           </el-select>
         </el-form-item>
+        <el-form-item label="消息类型">
+          <el-radio-group v-model="form.msg_type">
+            <el-radio value="text">文本</el-radio>
+            <el-radio value="interactive">卡片消息</el-radio>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="消息内容" required>
-          <el-input v-model="form.content" type="textarea" :rows="4" placeholder='{"text":"你好！"}' />
+          <el-input
+            v-if="form.msg_type === 'text'"
+            v-model="form.text"
+            type="textarea"
+            :rows="4"
+            placeholder="输入消息文本"
+          />
+          <el-input
+            v-else
+            v-model="form.cardJson"
+            type="textarea"
+            :rows="6"
+            placeholder='{"type":"template","data":{"template_id":"..."}}'
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -86,6 +134,8 @@ import {
   deleteScheduledTask,
   toggleScheduledTask,
   runScheduledTask,
+  getChats,
+  getConversations,
 } from '../api/client'
 import { ElMessage } from 'element-plus'
 
@@ -100,7 +150,15 @@ interface Task {
   last_run_at: string | null
 }
 
+interface ChatItem {
+  chat_id: string
+  name: string
+}
+
 const tasks = ref<Task[]>([])
+const groups = ref<ChatItem[]>([])
+const privateChats = ref<ChatItem[]>([])
+const groupNameMap = ref<Record<string, string>>({})
 const loading = ref(false)
 const page = ref(1)
 const pageSize = ref(10)
@@ -114,8 +172,45 @@ const form = ref({
   cron_expr: '',
   chat_id: '',
   msg_type: 'text',
-  content: '',
+  text: '',
+  cardJson: '',
 })
+
+const parseContent = (content: string): string => {
+  try {
+    const parsed = JSON.parse(content)
+    if (parsed.text) return parsed.text
+    return content
+  } catch {
+    return content
+  }
+}
+
+const loadChats = async () => {
+  try {
+    const groupRes = await getChats({ page: 1, page_size: 100 })
+    const groupList = groupRes.data.data || []
+    groups.value = groupList.map((g: any) => ({ chat_id: g.chat_id, name: g.name || g.chat_id }))
+    const map: Record<string, string> = {}
+    for (const g of groupList) {
+      if (g.name) map[g.chat_id] = g.name
+    }
+
+    const convRes = await getConversations()
+    const conversations = convRes.data.data || []
+    privateChats.value = conversations
+      .filter((c: any) => c.chat_type === 'p2p')
+      .map((c: any) => {
+        const name = c.sender_name || c.chat_id
+        map[c.chat_id] = name
+        return { chat_id: c.chat_id, name }
+      })
+
+    groupNameMap.value = map
+  } catch {
+    // ignore
+  }
+}
 
 const loadTasks = async () => {
   loading.value = true
@@ -141,35 +236,70 @@ const handleSizeChange = (size: number) => {
   loadTasks()
 }
 
+const contentToText = (content: string): string => {
+  try {
+    const parsed = JSON.parse(content)
+    if (parsed.text) return parsed.text
+    return content
+  } catch {
+    return content
+  }
+}
+
 const showDialog = (task?: Task) => {
   if (task) {
     editingTask.value = task
+    const isText = task.msg_type === 'text'
     form.value = {
       name: task.name,
       cron_expr: task.cron_expr,
       chat_id: task.chat_id,
       msg_type: task.msg_type,
-      content: task.content,
+      text: isText ? contentToText(task.content) : '',
+      cardJson: isText ? '' : task.content,
     }
   } else {
     editingTask.value = null
-    form.value = { name: '', cron_expr: '', chat_id: '', msg_type: 'text', content: '' }
+    form.value = { name: '', cron_expr: '', chat_id: '', msg_type: 'text', text: '', cardJson: '' }
   }
   dialogVisible.value = true
 }
 
 const handleSubmit = async () => {
-  if (!form.value.name || !form.value.cron_expr || !form.value.chat_id || !form.value.content) {
+  if (!form.value.name || !form.value.cron_expr || !form.value.chat_id) {
     ElMessage.warning('请填写所有必填项')
     return
   }
+
+  let content = ''
+  if (form.value.msg_type === 'text') {
+    if (!form.value.text.trim()) {
+      ElMessage.warning('请输入消息内容')
+      return
+    }
+    content = JSON.stringify({ text: form.value.text })
+  } else {
+    if (!form.value.cardJson.trim()) {
+      ElMessage.warning('请输入卡片 JSON')
+      return
+    }
+    content = form.value.cardJson
+  }
+
   submitting.value = true
+  const data = {
+    name: form.value.name,
+    cron_expr: form.value.cron_expr,
+    chat_id: form.value.chat_id,
+    msg_type: form.value.msg_type,
+    content,
+  }
   try {
     if (editingTask.value) {
-      await updateScheduledTask(editingTask.value.id, form.value)
+      await updateScheduledTask(editingTask.value.id, data)
       ElMessage.success('任务已更新')
     } else {
-      await createScheduledTask(form.value)
+      await createScheduledTask(data)
       ElMessage.success('任务已创建')
     }
     dialogVisible.value = false
@@ -215,5 +345,8 @@ const formatTime = (t: string | null) => {
   return new Date(t).toLocaleString()
 }
 
-onMounted(loadTasks)
+onMounted(async () => {
+  await loadChats()
+  loadTasks()
+})
 </script>

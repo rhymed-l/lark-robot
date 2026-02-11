@@ -1,6 +1,7 @@
 # Binary
 lark-robot.exe
 lark-robot
+build/
 
 # Config (contains secrets)
 config.yaml

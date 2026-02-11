@@ -47,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, ref, type ComputedRef } from 'vue'
+import { computed, inject, type ComputedRef } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   Odometer,

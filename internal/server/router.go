@@ -24,6 +24,7 @@ type Router struct {
 	scheduledTaskAPI *ScheduledTaskAPI
 	authSecret       string
 	frontendFS       http.FileSystem
+	embeddedFS       fs.FS
 }
 
 type RouterConfig struct {
@@ -38,6 +39,7 @@ type RouterConfig struct {
 	ReplyService     *service.ReplyService
 	Broadcaster      *broadcast.MessageBroadcaster
 	FrontendFS       http.FileSystem
+	EmbeddedFS       fs.FS
 }
 
 func NewRouter(cfg RouterConfig) *Router {
@@ -56,6 +58,7 @@ func NewRouter(cfg RouterConfig) *Router {
 		scheduledTaskAPI:   NewScheduledTaskAPI(cfg.SchedulerService),
 		authSecret:         cfg.AuthSecret,
 		frontendFS:         cfg.FrontendFS,
+		embeddedFS:         cfg.EmbeddedFS,
 	}
 
 	r.setupRoutes()
@@ -118,22 +121,25 @@ func (r *Router) setupRoutes() {
 
 	// Serve frontend
 	if r.frontendFS != nil {
-		r.Engine.StaticFS("/assets", r.frontendFS)
+		// Read index.html into memory for SPA fallback
+		indexFile, _ := r.frontendFS.Open("index.html")
+		indexBytes := make([]byte, 0)
+		if indexFile != nil {
+			indexBytes, _ = io.ReadAll(indexFile)
+			indexFile.Close()
+		}
+
+		// Serve static assets (js, css, images) under /assets/
+		assetsFS, _ := fs.Sub(r.embeddedFS, "assets")
+		r.Engine.StaticFS("/assets", http.FS(assetsFS))
+
+		// SPA fallback for all other non-API routes
 		r.Engine.NoRoute(func(c *gin.Context) {
 			if strings.HasPrefix(c.Request.URL.Path, "/api") {
 				c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 				return
 			}
-			// SPA fallback: serve index.html for non-API routes
-			file, err := r.frontendFS.Open("index.html")
-			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "frontend not found"})
-				return
-			}
-			defer file.Close()
-			stat, _ := file.Stat()
-			content, _ := io.ReadAll(file)
-			http.ServeContent(c.Writer, c.Request, "index.html", stat.ModTime(), strings.NewReader(string(content)))
+			c.Data(http.StatusOK, "text/html; charset=utf-8", indexBytes)
 		})
 	} else {
 		r.Engine.NoRoute(func(c *gin.Context) {
@@ -147,18 +153,15 @@ func (r *Router) setupRoutes() {
 }
 
 // TryLoadFrontendFS attempts to load the embedded frontend filesystem.
+// fsys should already point to the dist directory (via static.DistFS()).
 func TryLoadFrontendFS(fsys fs.FS) http.FileSystem {
 	if fsys == nil {
 		return nil
 	}
-	sub, err := fs.Sub(fsys, "dist")
-	if err != nil {
+	// Check if directory has content (more than just .gitkeep)
+	entries, err := fs.ReadDir(fsys, ".")
+	if err != nil || len(entries) <= 1 {
 		return nil
 	}
-	// Check if dist directory has content
-	entries, err := fs.ReadDir(sub, ".")
-	if err != nil || len(entries) == 0 {
-		return nil
-	}
-	return http.FS(sub)
+	return http.FS(fsys)
 }

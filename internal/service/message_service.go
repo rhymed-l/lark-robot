@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -107,6 +108,19 @@ func (s *MessageService) ListConversations(ctx context.Context) ([]repository.Co
 	}
 
 	return conversations, nil
+}
+
+// CleanupGroupLogs deletes group chat logs older than the specified number of days.
+func (s *MessageService) CleanupGroupLogs(days int) {
+	before := time.Now().AddDate(0, 0, -days).Format("2006-01-02 15:04:05")
+	count, err := s.logRepo.DeleteGroupLogsBefore(before)
+	if err != nil {
+		s.logger.Error("failed to cleanup group logs", zap.Error(err))
+		return
+	}
+	if count > 0 {
+		s.logger.Info("cleaned up group logs", zap.Int64("deleted", count), zap.Int("older_than_days", days))
+	}
 }
 
 // CountToday returns today's message count.

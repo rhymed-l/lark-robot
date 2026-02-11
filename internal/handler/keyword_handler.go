@@ -47,7 +47,7 @@ func (h *KeywordHandler) Handle(ctx context.Context, msg *IncomingMessage) (*Res
 		if !rule.Enabled {
 			continue
 		}
-		if rule.ChatID != "" && rule.ChatID != msg.ChatID {
+		if rule.ChatID != "" && !matchChatID(rule.ChatID, msg.ChatID) {
 			continue
 		}
 		if matchKeyword(msg.TextContent, rule.Keyword, rule.MatchMode) {
@@ -77,6 +77,16 @@ func renderTemplate(text string, msg *IncomingMessage) string {
 		"{{content}}", msg.TextContent,
 	)
 	return r.Replace(text)
+}
+
+// matchChatID checks if msgChatID is in the comma-separated ruleChatID list.
+func matchChatID(ruleChatID, msgChatID string) bool {
+	for _, id := range strings.Split(ruleChatID, ",") {
+		if strings.TrimSpace(id) == msgChatID {
+			return true
+		}
+	}
+	return false
 }
 
 func matchKeyword(text, keyword, mode string) bool {

@@ -38,6 +38,12 @@ func New(sendFunc SendFunc, updateLastRun UpdateLastRunFunc, logger *zap.Logger)
 	}
 }
 
+// AddCleanupJob registers a cron job for maintenance tasks (e.g., log cleanup).
+func (s *Scheduler) AddCleanupJob(cronExpr string, fn func()) error {
+	_, err := s.cron.AddFunc(cronExpr, fn)
+	return err
+}
+
 func (s *Scheduler) Start() {
 	s.cron.Start()
 	s.logger.Info("scheduler started")

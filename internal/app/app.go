@@ -165,7 +165,8 @@ func New(cfg *config.Config) (*App, error) {
 	)
 
 	// 10. Create router with embedded frontend
-	frontendFS := server.TryLoadFrontendFS(static.DistFS())
+	distFS := static.DistFS()
+	frontendFS := server.TryLoadFrontendFS(distFS)
 
 	router := server.NewRouter(server.RouterConfig{
 		Mode:             cfg.Server.Mode,
@@ -179,6 +180,7 @@ func New(cfg *config.Config) (*App, error) {
 		ReplyService:     replyService,
 		Broadcaster:      broadcaster,
 		FrontendFS:       frontendFS,
+		EmbeddedFS:       distFS,
 	})
 
 	return &App{
@@ -204,6 +206,11 @@ func (a *App) Start() error {
 		a.logger.Warn("failed to load scheduled tasks", zap.Error(err))
 	}
 	a.sched.Start()
+
+	// Register daily cleanup: delete group chat logs older than 7 days (runs at 02:00 every day)
+	a.sched.AddCleanupJob("0 0 2 * * *", func() {
+		a.messageService.CleanupGroupLogs(7)
+	})
 
 	// Start Lark WebSocket long connection in background
 	go func() {
