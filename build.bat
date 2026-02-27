@@ -65,10 +65,24 @@ set GOARCH=amd64
 set CGO_ENABLED=0
 go build -ldflags="-s -w" -o %BUILD_DIR%\windows-amd64\%APP_NAME%.exe .
 
+echo        - darwin/amd64
+set GOOS=darwin
+set GOARCH=amd64
+set CGO_ENABLED=0
+go build -ldflags="-s -w" -o %BUILD_DIR%\darwin-amd64\%APP_NAME% .
+
+echo        - darwin/arm64
+set GOOS=darwin
+set GOARCH=arm64
+set CGO_ENABLED=0
+go build -ldflags="-s -w" -o %BUILD_DIR%\darwin-arm64\%APP_NAME% .
+
 echo [5/5] Copy config...
 copy config.yaml.example %BUILD_DIR%\linux-amd64\config.yaml.example >nul
 copy config.yaml.example %BUILD_DIR%\linux-arm64\config.yaml.example >nul
 copy config.yaml.example %BUILD_DIR%\windows-amd64\config.yaml.example >nul
+copy config.yaml.example %BUILD_DIR%\darwin-amd64\config.yaml.example >nul
+copy config.yaml.example %BUILD_DIR%\darwin-arm64\config.yaml.example >nul
 
 echo.
 echo ========================================
@@ -78,6 +92,8 @@ echo.
 echo   build\linux-amd64\       Linux x86_64
 echo   build\linux-arm64\       Linux ARM64
 echo   build\windows-amd64\     Windows x86_64
+echo   build\darwin-amd64\      macOS x86_64
+echo   build\darwin-arm64\      macOS ARM64 (Apple Silicon)
 echo.
 
 :end
