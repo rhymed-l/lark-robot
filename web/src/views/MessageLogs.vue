@@ -1,8 +1,8 @@
 <template>
-  <div>
-    <h2>消息日志</h2>
+  <div class="page-container">
+    <h2 style="flex-shrink: 0">消息日志</h2>
 
-    <el-row :gutter="10" style="margin-bottom: 20px">
+    <el-row :gutter="10" style="margin-bottom: 20px; flex-shrink: 0">
       <el-col :span="5">
         <el-input v-model="filters.chat_id" placeholder="按会话 ID 筛选" clearable @clear="loadLogs" />
       </el-col>
@@ -30,7 +30,8 @@
       </el-col>
     </el-row>
 
-    <el-table :data="logs" stripe v-loading="loading">
+    <div style="flex: 1; min-height: 0; overflow: hidden">
+    <el-table :data="logs" stripe v-loading="loading" height="100%">
       <el-table-column prop="direction" label="方向" width="70">
         <template #default="{ row }">
           <el-tag :type="row.direction === 'in' ? 'success' : 'primary'" size="small">
@@ -77,10 +78,11 @@
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <el-pagination
       v-if="total > 0"
-      style="margin-top: 20px; justify-content: flex-end"
+      style="margin-top: 12px; justify-content: flex-end; flex-shrink: 0"
       :current-page="page"
       :page-size="pageSize"
       :total="total"
@@ -270,6 +272,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.page-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 40px);
+}
 .name-cell {
   cursor: default;
   border-bottom: 1px dashed #c0c4cc;

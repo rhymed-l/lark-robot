@@ -1,11 +1,12 @@
 <template>
-  <div>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px">
+  <div class="page-container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-shrink: 0">
       <h2 style="margin: 0">自动回复规则</h2>
       <el-button type="primary" @click="showDialog()">添加规则</el-button>
     </div>
 
-    <el-table :data="rules" stripe v-loading="loading">
+    <div style="flex: 1; min-height: 0; overflow: hidden">
+    <el-table :data="rules" stripe v-loading="loading" height="100%">
       <el-table-column prop="keyword" label="关键词" />
       <el-table-column prop="reply_text" label="回复内容" show-overflow-tooltip />
       <el-table-column prop="match_mode" label="匹配方式" width="120">
@@ -40,6 +41,7 @@
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <el-dialog v-model="dialogVisible" :title="editingRule ? '编辑规则' : '添加规则'" width="560px">
       <el-form :model="form" label-width="100px">
@@ -98,7 +100,7 @@
 
     <el-pagination
       v-if="total > 0"
-      style="margin-top: 20px; justify-content: flex-end"
+      style="margin-top: 12px; justify-content: flex-end; flex-shrink: 0"
       :current-page="page"
       :page-size="pageSize"
       :total="total"
@@ -303,6 +305,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.page-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 40px);
+}
 .var-hint {
   margin-top: 6px;
   line-height: 2;

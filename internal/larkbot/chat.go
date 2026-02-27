@@ -135,6 +135,63 @@ func (c *LarkClient) GetChatInfo(ctx context.Context, chatID string) (*ChatInfo,
 	}, nil
 }
 
+// ChatMember represents a member of a chat/group.
+type ChatMember struct {
+	MemberID string `json:"member_id"`
+	Name     string `json:"name"`
+}
+
+// ChatMembersPage holds one page of chat members.
+type ChatMembersPage struct {
+	Items     []ChatMember `json:"items"`
+	PageToken string       `json:"page_token"`
+	HasMore   bool         `json:"has_more"`
+	Total     int          `json:"total"`
+}
+
+// GetChatMembersPage returns one page of members for a specific chat.
+func (c *LarkClient) GetChatMembersPage(ctx context.Context, chatID string, pageToken string, pageSize int) (*ChatMembersPage, error) {
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 50
+	}
+
+	reqBuilder := larkim.NewGetChatMembersReqBuilder().
+		ChatId(chatID).
+		MemberIdType("open_id").
+		PageSize(pageSize)
+	if pageToken != "" {
+		reqBuilder.PageToken(pageToken)
+	}
+	req := reqBuilder.Build()
+
+	resp, err := c.Client.Im.V1.ChatMembers.Get(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("get chat members failed: %w", err)
+	}
+	if !resp.Success() {
+		return nil, fmt.Errorf("get chat members error: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	page := &ChatMembersPage{}
+	for _, item := range resp.Data.Items {
+		page.Items = append(page.Items, ChatMember{
+			MemberID: deref(item.MemberId),
+			Name:     deref(item.Name),
+		})
+	}
+	if resp.Data.HasMore != nil {
+		page.HasMore = *resp.Data.HasMore
+	}
+	if resp.Data.PageToken != nil {
+		page.PageToken = *resp.Data.PageToken
+	}
+	if resp.Data.MemberTotal != nil {
+		page.Total = *resp.Data.MemberTotal
+	}
+
+	return page, nil
+}
+
 func deref(s *string) string {
 	if s == nil {
 		return ""

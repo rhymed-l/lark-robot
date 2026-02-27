@@ -43,20 +43,46 @@ func (r *UserRepo) GetByOpenID(openID string) (*model.User, error) {
 	return &user, err
 }
 
-// List returns paginated users with optional keyword search.
-func (r *UserRepo) List(page, pageSize int, keyword string) ([]model.User, int64, error) {
+// allowedSortColumns prevents SQL injection in ORDER BY.
+var allowedSortColumns = map[string]bool{
+	"name": true, "en_name": true, "employee_no": true,
+	"job_title": true, "email": true, "work_station": true,
+	"gender": true, "msg_count": true, "join_time": true,
+	"last_seen": true, "first_seen": true, "created_at": true,
+}
+
+// UserQuery holds query parameters for listing users.
+type UserQuery struct {
+	Page     int
+	PageSize int
+	Keyword  string
+	SortBy   string // column name
+	SortDir  string // "asc" or "desc"
+}
+
+// List returns paginated users with optional keyword search and sorting.
+func (r *UserRepo) List(q UserQuery) ([]model.User, int64, error) {
 	var users []model.User
 	var total int64
 
 	tx := r.db.Model(&model.User{})
-	if keyword != "" {
+	if q.Keyword != "" {
 		tx = tx.Where("name LIKE ? OR en_name LIKE ? OR open_id LIKE ? OR employee_no LIKE ? OR email LIKE ?",
-			"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
+			"%"+q.Keyword+"%", "%"+q.Keyword+"%", "%"+q.Keyword+"%", "%"+q.Keyword+"%", "%"+q.Keyword+"%")
 	}
 	tx.Count(&total)
 
-	offset := (page - 1) * pageSize
-	err := tx.Order("last_seen desc").Offset(offset).Limit(pageSize).Find(&users).Error
+	orderClause := "last_seen desc"
+	if q.SortBy != "" && allowedSortColumns[q.SortBy] {
+		dir := "asc"
+		if q.SortDir == "desc" {
+			dir = "desc"
+		}
+		orderClause = q.SortBy + " " + dir
+	}
+
+	offset := (q.Page - 1) * q.PageSize
+	err := tx.Order(orderClause).Offset(offset).Limit(q.PageSize).Find(&users).Error
 	return users, total, err
 }
 

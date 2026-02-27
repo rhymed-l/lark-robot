@@ -91,8 +91,8 @@ func (s *UserService) OnMessageReceived(ctx context.Context, openID string) {
 }
 
 // ListUsers returns a paginated list of users.
-func (s *UserService) ListUsers(page, pageSize int, keyword string) ([]model.User, int64, error) {
-	return s.repo.List(page, pageSize, keyword)
+func (s *UserService) ListUsers(q repository.UserQuery) ([]model.User, int64, error) {
+	return s.repo.List(q)
 }
 
 // GetUser returns a user by open_id.
@@ -124,7 +124,7 @@ func (s *UserService) SyncUser(ctx context.Context, openID string) (*model.User,
 
 // SyncAllUsers re-fetches info from Lark API for all known users.
 func (s *UserService) SyncAllUsers(ctx context.Context) (int, error) {
-	users, _, err := s.repo.List(1, 10000, "")
+	users, _, err := s.repo.List(repository.UserQuery{Page: 1, PageSize: 10000})
 	if err != nil {
 		return 0, err
 	}

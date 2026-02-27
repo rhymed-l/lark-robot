@@ -99,6 +99,7 @@ func (r *Router) setupRoutes() {
 		authed.GET("/chats", r.chatAPI.List)
 		authed.POST("/chats/sync", r.chatAPI.Sync)
 		authed.POST("/chats/:chat_id/leave", r.chatAPI.Leave)
+		authed.GET("/chats/:chat_id/members", r.chatAPI.Members)
 
 		// Users
 		authed.GET("/users", r.userAPI.List)

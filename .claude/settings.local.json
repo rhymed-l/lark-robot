@@ -18,7 +18,9 @@
       "Bash(xargs grep -l \"image\\\\|img\\\\|image_key\")",
       "Bash(go env GOMODCACHE)",
       "Bash(xargs grep -l \"ChatMembers\\\\|member.*count\")",
-      "Bash(go doc github.com/larksuite/oapi-sdk-go/v3/service/im/v1.ListChatRespBodyItem)"
+      "Bash(go doc github.com/larksuite/oapi-sdk-go/v3/service/im/v1.ListChatRespBodyItem)",
+      "Bash(xargs grep -l \"List.*page.*pageSize\")",
+      "Bash(xargs wc -l)"
     ]
   }
 }

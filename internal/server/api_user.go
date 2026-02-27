@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"lark-robot/internal/repository"
 	"lark-robot/internal/service"
 )
 
@@ -30,7 +31,13 @@ func (api *UserAPI) List(c *gin.Context) {
 		pageSize = 20
 	}
 
-	users, total, err := api.userService.ListUsers(page, pageSize, keyword)
+	users, total, err := api.userService.ListUsers(repository.UserQuery{
+		Page:     page,
+		PageSize: pageSize,
+		Keyword:  keyword,
+		SortBy:   c.Query("sort_by"),
+		SortDir:  c.Query("sort_dir"),
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

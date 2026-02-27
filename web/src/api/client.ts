@@ -69,6 +69,8 @@ export const getConversations = () => api.get('/messages/conversations')
 export const getChats = (params?: { page?: number; page_size?: number }) => api.get('/chats', { params })
 export const syncChats = () => api.post('/chats/sync')
 export const leaveChat = (chatId: string) => api.post(`/chats/${chatId}/leave`)
+export const getChatMembers = (chatId: string, params?: { page_token?: string; page_size?: number }) =>
+  api.get(`/chats/${chatId}/members`, { params })
 
 // Auto-reply rules
 export const getAutoReplyRules = (params?: { page?: number; page_size?: number }) => api.get('/auto-reply-rules', { params })
@@ -92,7 +94,7 @@ export const deleteAutoReplyRule = (id: number) => api.delete(`/auto-reply-rules
 export const toggleAutoReplyRule = (id: number) => api.post(`/auto-reply-rules/${id}/toggle`)
 
 // Users
-export const getUsers = (params?: { page?: number; page_size?: number; keyword?: string }) =>
+export const getUsers = (params?: { page?: number; page_size?: number; keyword?: string; sort_by?: string; sort_dir?: string }) =>
   api.get('/users', { params })
 export const syncUsers = () => api.post('/users/sync')
 export const getUserByOpenID = (openId: string) => api.get(`/users/${openId}`)

@@ -99,7 +99,8 @@ const handleLogout = () => {
 .logout-area {
   position: absolute;
   bottom: 12px;
-  width: 100%;
+  left: 0;
+  width: 200px;
   padding: 0 16px;
   box-sizing: border-box;
 }

@@ -80,7 +80,14 @@
       <template v-if="activeChatId">
         <!-- Chat header -->
         <div class="chat-header">
-          <span class="chat-header-name">{{ activeChatName }}</span>
+          <span
+            class="chat-header-name"
+            :class="{ 'chat-header-clickable': isGroupChat }"
+            @click="isGroupChat && toggleMembersPanel()"
+          >
+            {{ activeChatName }}
+            <el-icon v-if="isGroupChat" class="chat-header-arrow"><ArrowRight /></el-icon>
+          </span>
           <el-tag v-if="connected" type="success" size="small">已连接</el-tag>
           <el-tag v-else type="info" size="small">等待消息</el-tag>
         </div>
@@ -161,6 +168,42 @@
       </div>
     </div>
 
+    <!-- Right: Members panel (group chat only) -->
+    <transition name="slide-right">
+      <div v-if="showMembersPanel" class="members-panel">
+        <div class="members-panel-header">
+          <span>群成员 ({{ membersTotal || chatMembers.length }})</span>
+          <div>
+            <el-button text size="small" @click="loadChatMembers(true)" :loading="membersLoading">
+              <el-icon><Refresh /></el-icon>
+            </el-button>
+            <el-button text size="small" @click="showMembersPanel = false">
+              <el-icon><Close /></el-icon>
+            </el-button>
+          </div>
+        </div>
+        <div v-if="membersLoading && chatMembers.length === 0" class="members-loading">
+          <el-text type="info">加载中...</el-text>
+        </div>
+        <div v-else ref="membersListRef" class="members-list" @scroll="onMembersScroll">
+          <div v-for="member in chatMembers" :key="member.member_id" class="member-item">
+            <el-avatar :size="32" :src="avatarMap[member.member_id] || undefined" class="member-avatar">
+              {{ (member.name || '?').charAt(0) }}
+            </el-avatar>
+            <div class="member-info">
+              <span class="member-name">{{ member.name || member.member_id }}</span>
+            </div>
+          </div>
+          <div v-if="membersLoading && chatMembers.length > 0" class="members-loading">
+            <el-text type="info" size="small">加载更多...</el-text>
+          </div>
+          <div v-if="chatMembers.length === 0" class="members-empty">
+            <el-text type="info" size="small">暂无成员</el-text>
+          </div>
+        </div>
+      </div>
+    </transition>
+
     <Teleport to="body">
       <div
         v-if="contextMenu.visible"
@@ -195,8 +238,8 @@
 <script setup lang="ts">
 import { ref, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChatDotRound, Close } from '@element-plus/icons-vue'
-import { getChats, getConversations, getMessageLogs, sendMessage, replyMessage, deleteMessage, getToken, getUserByOpenID } from '../api/client'
+import { ChatDotRound, Close, ArrowRight, Refresh } from '@element-plus/icons-vue'
+import { getChats, getConversations, getMessageLogs, sendMessage, replyMessage, deleteMessage, getToken, getUserByOpenID, getChatMembers } from '../api/client'
 import { ElMessage } from 'element-plus'
 
 const unreadMap = inject<Record<string, number>>('unreadMap', {})
@@ -240,6 +283,65 @@ const messageContainer = ref<HTMLElement>()
 const editorRef = ref<HTMLElement>()
 const replyTo = ref<Message | null>(null)
 const contextMenu = ref({ visible: false, x: 0, y: 0, msg: null as Message | null })
+
+// Members panel
+const showMembersPanel = ref(false)
+const chatMembers = ref<{ member_id: string; name: string }[]>([])
+const membersLoading = ref(false)
+const membersTotal = ref(0)
+const membersPageToken = ref('')
+const membersHasMore = ref(false)
+const membersListRef = ref<HTMLElement>()
+
+const isGroupChat = computed(() => {
+  return groups.value.some(g => g.chat_id === activeChatId.value)
+})
+
+const toggleMembersPanel = async () => {
+  showMembersPanel.value = !showMembersPanel.value
+  if (showMembersPanel.value && chatMembers.value.length === 0) {
+    await loadChatMembers(true)
+  }
+}
+
+const loadChatMembers = async (reset: boolean) => {
+  if (!activeChatId.value || membersLoading.value) return
+  if (reset) {
+    chatMembers.value = []
+    membersPageToken.value = ''
+    membersHasMore.value = false
+    membersTotal.value = 0
+  }
+  membersLoading.value = true
+  try {
+    const res = await getChatMembers(activeChatId.value, {
+      page_token: membersPageToken.value || undefined,
+      page_size: 50,
+    })
+    const newItems = res.data.data || []
+    chatMembers.value = reset ? newItems : [...chatMembers.value, ...newItems]
+    membersPageToken.value = res.data.page_token || ''
+    membersHasMore.value = res.data.has_more || false
+    membersTotal.value = res.data.total || chatMembers.value.length
+    // Fetch avatars for new members
+    newItems.forEach((m: { member_id: string }) => {
+      if (m.member_id) fetchUserInfo(m.member_id)
+    })
+  } catch (e) {
+    console.error('加载群成员失败', e)
+  } finally {
+    membersLoading.value = false
+  }
+}
+
+const onMembersScroll = () => {
+  if (!membersHasMore.value || membersLoading.value) return
+  const el = membersListRef.value
+  if (!el) return
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 50) {
+    loadChatMembers(false)
+  }
+}
 
 // Image preview
 const previewVisible = ref(false)
@@ -745,6 +847,11 @@ const switchChat = (item: ChatItem) => {
   activeChatId.value = item.chat_id
   activeChatName.value = item.name || item.chat_id
   messages.value = []
+  showMembersPanel.value = false
+  chatMembers.value = []
+  membersPageToken.value = ''
+  membersHasMore.value = false
+  membersTotal.value = 0
   clearChatUnread(item.chat_id)
   router.replace({ path: `/chat/${item.chat_id}`, query: { name: item.name } })
   // If name is still an ID, fetch user info to resolve it
@@ -911,10 +1018,22 @@ onMounted(async () => {
     activeChatName.value = (route.query.name as string) || chatId
     const match = groups.value.find((g) => g.chat_id === chatId)
       || privateChats.value.find((c) => c.chat_id === chatId)
-    if (match) activeChatName.value = match.name || chatId
+    if (match) {
+      activeChatName.value = match.name || chatId
+    }
     // Auto-select correct tab
     if (!groups.value.find((g) => g.chat_id === chatId)) {
       activeTab.value = 'private'
+      // If not in private chats list either, add a temporary entry
+      if (!privateChats.value.find((c) => c.chat_id === chatId)) {
+        const name = (route.query.name as string) || chatId
+        privateChats.value.unshift({
+          chat_id: chatId,
+          name,
+          description: '新对话',
+          sender_id: chatId,
+        })
+      }
     }
     // Resolve name if still showing an ID
     if (activeChatName.value.startsWith('ou_')) {
@@ -937,11 +1056,25 @@ watch(() => route.params.chatId, (newChatId) => {
     if (match) activeChatName.value = match.name || chatId
     if (!groups.value.find((g) => g.chat_id === chatId)) {
       activeTab.value = 'private'
+      // If not in private chats list either, add a temporary entry
+      if (!privateChats.value.find((c) => c.chat_id === chatId)) {
+        const name = (route.query.name as string) || chatId
+        privateChats.value.unshift({
+          chat_id: chatId,
+          name,
+          description: '新对话',
+          sender_id: chatId,
+        })
+      }
     } else {
       activeTab.value = 'group'
     }
     messages.value = []
     clearChatUnread(chatId)
+    // Resolve name if still showing an ID
+    if (activeChatName.value.startsWith('ou_')) {
+      fetchUserInfo(activeChatName.value)
+    }
     loadHistory()
     connectSSE()
   }
@@ -1084,6 +1217,7 @@ onUnmounted(() => {
   background: #fff;
   border-radius: 0 8px 8px 0;
   overflow: hidden;
+  min-width: 0;
 }
 
 .chat-header {
@@ -1098,6 +1232,28 @@ onUnmounted(() => {
   font-size: 16px;
   font-weight: 600;
   color: #303133;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-header-clickable {
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.chat-header-clickable:hover {
+  color: #409eff;
+}
+
+.chat-header-arrow {
+  font-size: 14px;
+  color: #909399;
+  transition: color 0.15s;
+}
+
+.chat-header-clickable:hover .chat-header-arrow {
+  color: #409eff;
 }
 
 .message-container {
@@ -1285,6 +1441,88 @@ onUnmounted(() => {
   font-weight: 500;
   margin: 0 1px;
   user-select: all;
+}
+
+/* Members panel */
+.members-panel {
+  width: 240px;
+  min-width: 240px;
+  background: #fff;
+  border-left: 1px solid #e4e7ed;
+  border-radius: 0 8px 8px 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.members-panel-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e4e7ed;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.members-loading {
+  text-align: center;
+  padding: 20px;
+}
+
+.members-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.member-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  transition: background 0.15s;
+}
+
+.member-item:hover {
+  background: #f5f7fa;
+}
+
+.member-avatar {
+  flex-shrink: 0;
+}
+
+.member-info {
+  flex: 1;
+  overflow: hidden;
+}
+
+.member-name {
+  font-size: 13px;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.members-empty {
+  text-align: center;
+  padding: 20px;
+}
+
+/* Slide transition */
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: all 0.2s ease;
+}
+
+.slide-right-enter-from,
+.slide-right-leave-to {
+  width: 0;
+  min-width: 0;
+  opacity: 0;
 }
 </style>
 

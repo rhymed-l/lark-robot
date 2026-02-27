@@ -7,7 +7,7 @@
     <el-aside width="200px" style="background-color: #304156">
       <Sidebar />
     </el-aside>
-    <el-main style="padding: 20px; background-color: #f0f2f5">
+    <el-main style="padding: 20px; background-color: #f0f2f5; overflow: hidden">
       <router-view />
     </el-main>
   </el-container>

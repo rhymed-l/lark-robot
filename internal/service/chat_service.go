@@ -112,6 +112,11 @@ func (s *ChatService) AutoSyncGroup(ctx context.Context, chatID string) {
 	s.logger.Info("auto-synced group", zap.String("chat_id", chatID), zap.String("name", chatInfo.Name))
 }
 
+// GetChatMembersPage returns one page of members for a specific chat.
+func (s *ChatService) GetChatMembersPage(ctx context.Context, chatID, pageToken string, pageSize int) (*larkbot.ChatMembersPage, error) {
+	return s.larkClient.GetChatMembersPage(ctx, chatID, pageToken, pageSize)
+}
+
 // GroupCount returns the number of groups in the database.
 func (s *ChatService) GroupCount() (int64, error) {
 	return s.repo.Count()

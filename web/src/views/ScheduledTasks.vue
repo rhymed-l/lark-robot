@@ -1,11 +1,12 @@
 <template>
-  <div>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px">
+  <div class="page-container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-shrink: 0">
       <h2 style="margin: 0">定时任务</h2>
       <el-button type="primary" @click="showDialog()">添加任务</el-button>
     </div>
 
-    <el-table :data="tasks" stripe v-loading="loading">
+    <div style="flex: 1; min-height: 0; overflow: hidden">
+    <el-table :data="tasks" stripe v-loading="loading" height="100%">
       <el-table-column prop="name" label="任务名称" />
       <el-table-column prop="cron_expr" label="Cron 表达式" width="160" />
       <el-table-column label="发送到" width="160">
@@ -45,6 +46,7 @@
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <el-dialog v-model="dialogVisible" :title="editingTask ? '编辑任务' : '添加任务'" width="550px">
       <el-form :model="form" label-width="100px">
@@ -113,7 +115,7 @@
 
     <el-pagination
       v-if="total > 0"
-      style="margin-top: 20px; justify-content: flex-end"
+      style="margin-top: 12px; justify-content: flex-end; flex-shrink: 0"
       :current-page="page"
       :page-size="pageSize"
       :total="total"
@@ -350,3 +352,11 @@ onMounted(async () => {
   loadTasks()
 })
 </script>
+
+<style scoped>
+.page-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 40px);
+}
+</style>

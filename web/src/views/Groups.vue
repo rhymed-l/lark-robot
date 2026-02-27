@@ -1,13 +1,14 @@
 <template>
-  <div>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px">
+  <div class="page-container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-shrink: 0">
       <h2 style="margin: 0">群组管理</h2>
       <el-button type="primary" @click="handleSync" :loading="syncing">
         从飞书同步
       </el-button>
     </div>
 
-    <el-table :data="groups" stripe v-loading="loading">
+    <div style="flex: 1; min-height: 0; overflow: hidden">
+    <el-table :data="groups" stripe v-loading="loading" height="100%">
       <el-table-column label="头像" width="70">
         <template #default="{ row }">
           <el-avatar v-if="row.avatar" :src="row.avatar" :size="36" />
@@ -59,10 +60,11 @@
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <el-pagination
       v-if="total > 0"
-      style="margin-top: 20px; justify-content: flex-end"
+      style="margin-top: 12px; justify-content: flex-end; flex-shrink: 0"
       :current-page="page"
       :page-size="pageSize"
       :total="total"
@@ -172,3 +174,11 @@ const formatTime = (t: string) => {
 
 onMounted(loadGroups)
 </script>
+
+<style scoped>
+.page-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 40px);
+}
+</style>

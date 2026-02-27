@@ -52,3 +52,24 @@ func (api *ChatAPI) Leave(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "left chat successfully"})
 }
+
+func (api *ChatAPI) Members(c *gin.Context) {
+	chatID := c.Param("chat_id")
+	pageToken := c.Query("page_token")
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "50"))
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 50
+	}
+
+	page, err := api.chatService.GetChatMembersPage(c.Request.Context(), chatID, pageToken, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data":       page.Items,
+		"page_token": page.PageToken,
+		"has_more":   page.HasMore,
+		"total":      page.Total,
+	})
+}
