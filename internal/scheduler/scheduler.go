@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,9 +48,15 @@ func New(sendFunc SendFunc, updateLastRun UpdateLastRunFunc, updateNextRun Updat
 	}
 }
 
+// normalizeCronExpr converts Quartz-style cron expressions to robfig/cron format.
+// Replaces "?" (Quartz day-of-week/day-of-month wildcard) with "*".
+func normalizeCronExpr(expr string) string {
+	return strings.ReplaceAll(expr, "?", "*")
+}
+
 // AddCleanupJob registers a cron job for maintenance tasks (e.g., log cleanup).
 func (s *Scheduler) AddCleanupJob(cronExpr string, fn func()) error {
-	_, err := s.cron.AddFunc(cronExpr, fn)
+	_, err := s.cron.AddFunc(normalizeCronExpr(cronExpr), fn)
 	return err
 }
 
@@ -72,7 +79,8 @@ func (s *Scheduler) AddTask(task *model.ScheduledTask) error {
 	msgType := task.MsgType
 	content := task.Content
 
-	entryID, err := s.cron.AddFunc(task.CronExpr, func() {
+	cronExpr := normalizeCronExpr(task.CronExpr)
+	entryID, err := s.cron.AddFunc(cronExpr, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
@@ -110,7 +118,7 @@ func (s *Scheduler) AddTask(task *model.ScheduledTask) error {
 		s.logger.Info("scheduled task executed", zap.Uint("task_id", taskID))
 	})
 	if err != nil {
-		return fmt.Errorf("invalid cron expression %q: %w", task.CronExpr, err)
+		return fmt.Errorf("invalid cron expression %q (normalized: %q): %w", task.CronExpr, cronExpr, err)
 	}
 	s.entries[task.ID] = entryID
 

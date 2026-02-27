@@ -857,27 +857,31 @@ const handleSend = async () => {
   try {
     const content = JSON.stringify({ text })
 
+    let msgId = ''
     if (replyTo.value?.message_id) {
       // Reply to a specific message
-      await replyMessage({
+      const res = await replyMessage({
         message_id: replyTo.value.message_id,
         msg_type: 'text',
         content,
       })
+      msgId = res.data.message_id || ''
     } else {
       // Send new message (detect if open_id or chat_id)
       const idType = activeChatId.value.startsWith('ou_') ? 'open_id' : 'chat_id'
-      await sendMessage({
+      const res = await sendMessage({
         receive_id: activeChatId.value,
         receive_id_type: idType,
         msg_type: 'text',
         content,
       })
+      msgId = res.data.message_id || ''
     }
 
     clearEditor()
     replyTo.value = null
     messages.value.push({
+      message_id: msgId,
       chat_id: activeChatId.value,
       sender_id: '',
       direction: 'out',
