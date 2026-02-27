@@ -7,8 +7,9 @@
 - **自动回复** — 支持精确匹配、包含匹配、前缀匹配多种模式，可按群组或全局生效，支持模板变量
 - **定时消息** — 基于 Cron 表达式的定时任务，支持发送到群组或私聊
 - **群组管理** — 自动同步已加入的群组信息，支持查看群组详情和退群操作
+- **用户管理** — 自动同步飞书通讯录用户信息，支持搜索和按需同步
 - **消息日志** — 记录所有收发消息，支持分页筛选，自动清理过期记录
-- **实时聊天** — Web 端通过 SSE 实时接收消息，支持在线回复
+- **实时聊天** — Web 端通过 SSE 实时接收消息，支持在线回复、消息撤回和图片查看文下载
 - **Web 管理后台** — 响应式界面，统一管理所有功能
 
 ## 技术栈
@@ -86,9 +87,11 @@ make frontend-dev
 使用 `build.bat` 一键编译多平台产物：
 
 ```
-build/linux-amd64/lark-robot
-build/linux-arm64/lark-robot
-build/windows-amd64/lark-robot.exe
+build/linux-amd64/lark-robot        # Linux x86_64
+build/linux-arm64/lark-robot        # Linux ARM64
+build/windows-amd64/lark-robot.exe  # Windows x86_64
+build/darwin-amd64/lark-robot       # macOS x86_64
+build/darwin-arm64/lark-robot       # macOS ARM64 (Apple Silicon)
 ```
 
 编译后的二进制文件已嵌入前端静态资源，可直接部署运行。
@@ -137,9 +140,12 @@ lark-robot/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/messages/send` | 发送消息 |
+| POST | `/api/messages/reply` | 回复消息 |
+| DELETE | `/api/messages/:message_id` | 撤回消息 |
 | GET | `/api/messages/logs` | 获取消息日志 |
 | GET | `/api/messages/conversations` | 获取会话列表 |
 | GET | `/api/messages/stream` | SSE 实时消息流 |
+| GET | `/api/images/:message_id/:file_key` | 获取消息中的图片资源 |
 
 ### 群组
 
@@ -148,6 +154,14 @@ lark-robot/
 | GET | `/api/chats` | 获取群组列表 |
 | POST | `/api/chats/sync` | 同步群组信息 |
 | POST | `/api/chats/:chat_id/leave` | 退出群组 |
+
+### 用户
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/users` | 获取用户列表 |
+| POST | `/api/users/sync` | 同步飞书通讯录用户 |
+| GET | `/api/users/:open_id` | 获取用户详情 |
 
 ### 自动回复规则
 
