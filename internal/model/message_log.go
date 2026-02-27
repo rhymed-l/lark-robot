@@ -14,5 +14,6 @@ type MessageLog struct {
 	Content   string    `gorm:"type:text" json:"content"`
 	HandledBy string    `gorm:"size:50" json:"handled_by"`
 	Source    string    `gorm:"size:20" json:"source"` // "event", "scheduled", "manual"
+	Recalled bool      `gorm:"default:false" json:"recalled"`
 	CreatedAt time.Time `json:"created_at"`
 }

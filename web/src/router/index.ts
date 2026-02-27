@@ -24,6 +24,11 @@ const router = createRouter({
       component: () => import('../views/Groups.vue'),
     },
     {
+      path: '/users',
+      name: 'Users',
+      component: () => import('../views/Users.vue'),
+    },
+    {
       path: '/auto-reply',
       name: 'AutoReply',
       component: () => import('../views/AutoReplyRules.vue'),

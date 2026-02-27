@@ -13,7 +13,12 @@
       "Bash(npx vue-tsc:*)",
       "Bash(npm run build:*)",
       "Bash(dir:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(go run . -config config.yaml)",
+      "Bash(xargs grep -l \"image\\\\|img\\\\|image_key\")",
+      "Bash(go env GOMODCACHE)",
+      "Bash(xargs grep -l \"ChatMembers\\\\|member.*count\")",
+      "Bash(go doc github.com/larksuite/oapi-sdk-go/v3/service/im/v1.ListChatRespBodyItem)"
     ]
   }
 }

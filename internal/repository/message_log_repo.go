@@ -61,6 +61,18 @@ func (r *MessageLogRepo) Create(log *model.MessageLog) error {
 	return r.db.Create(log).Error
 }
 
+// GetByMessageID finds a message log by its Lark message_id.
+func (r *MessageLogRepo) GetByMessageID(messageID string) (*model.MessageLog, error) {
+	var log model.MessageLog
+	err := r.db.Where("message_id = ?", messageID).First(&log).Error
+	return &log, err
+}
+
+// RecallByMessageID marks a message as recalled by its Lark message_id.
+func (r *MessageLogRepo) RecallByMessageID(messageID string) error {
+	return r.db.Model(&model.MessageLog{}).Where("message_id = ?", messageID).Update("recalled", true).Error
+}
+
 // Conversation represents a recent chat extracted from message logs.
 type Conversation struct {
 	ChatID      string `json:"chat_id"`

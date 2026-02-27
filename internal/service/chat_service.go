@@ -37,11 +37,22 @@ func (s *ChatService) SyncChats(ctx context.Context) ([]model.Group, error) {
 		group := &model.Group{
 			ChatID:      chat.ChatID,
 			Name:        chat.Name,
+			Avatar:      chat.Avatar,
 			Description: chat.Description,
 			OwnerID:     chat.OwnerID,
-			MemberCount: chat.MemberCount,
 			External:    chat.External,
 			SyncedAt:    time.Now(),
+		}
+		// ListChats API 不返回所有字段，需要单独调用 GetChatInfo 获取详细信息
+		if detail, err := s.larkClient.GetChatInfo(ctx, chat.ChatID); err == nil {
+			group.MemberCount = detail.MemberCount
+			group.BotCount = detail.BotCount
+			group.ChatMode = detail.ChatMode
+			group.ChatType = detail.ChatType
+			group.ChatTag = detail.ChatTag
+			if detail.Avatar != "" {
+				group.Avatar = detail.Avatar
+			}
 		}
 		if err := s.repo.Upsert(group); err != nil {
 			s.logger.Error("failed to upsert group", zap.String("chat_id", chat.ChatID), zap.Error(err))
@@ -87,8 +98,14 @@ func (s *ChatService) AutoSyncGroup(ctx context.Context, chatID string) {
 	_ = s.repo.Upsert(&model.Group{
 		ChatID:      chatInfo.ChatID,
 		Name:        chatInfo.Name,
+		Avatar:      chatInfo.Avatar,
 		Description: chatInfo.Description,
+		ChatMode:    chatInfo.ChatMode,
+		ChatType:    chatInfo.ChatType,
+		ChatTag:     chatInfo.ChatTag,
 		OwnerID:     chatInfo.OwnerID,
+		MemberCount: chatInfo.MemberCount,
+		BotCount:    chatInfo.BotCount,
 		External:    chatInfo.External,
 		SyncedAt:    time.Now(),
 	})

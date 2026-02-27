@@ -46,6 +46,12 @@ export const sendMessage = (data: {
   content: string
 }) => api.post('/messages/send', data)
 
+export const replyMessage = (data: {
+  message_id: string
+  msg_type: string
+  content: string
+}) => api.post('/messages/reply', data)
+
 export const getMessageLogs = (params: {
   page?: number
   page_size?: number
@@ -54,6 +60,8 @@ export const getMessageLogs = (params: {
   direction?: string
   source?: string
 }) => api.get('/messages/logs', { params })
+
+export const deleteMessage = (messageId: string) => api.delete(`/messages/${messageId}`)
 
 export const getConversations = () => api.get('/messages/conversations')
 
@@ -82,6 +90,12 @@ export const updateAutoReplyRule = (id: number, data: {
 }) => api.put(`/auto-reply-rules/${id}`, data)
 export const deleteAutoReplyRule = (id: number) => api.delete(`/auto-reply-rules/${id}`)
 export const toggleAutoReplyRule = (id: number) => api.post(`/auto-reply-rules/${id}/toggle`)
+
+// Users
+export const getUsers = (params?: { page?: number; page_size?: number; keyword?: string }) =>
+  api.get('/users', { params })
+export const syncUsers = () => api.post('/users/sync')
+export const getUserByOpenID = (openId: string) => api.get(`/users/${openId}`)
 
 // Scheduled tasks
 export const getScheduledTasks = (params?: { page?: number; page_size?: number }) => api.get('/scheduled-tasks', { params })

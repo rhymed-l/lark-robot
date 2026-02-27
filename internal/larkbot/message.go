@@ -1,9 +1,13 @@
 package larkbot
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
@@ -46,6 +50,42 @@ func (c *LarkClient) ReplyMessage(ctx context.Context, messageID, msgType, conte
 		return "", fmt.Errorf("reply message error: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 	return *resp.Data.MessageId, nil
+}
+
+// GetMessageResource downloads a resource (image/file) from a message.
+// resType should be "image" or "file".
+func (c *LarkClient) GetMessageResource(ctx context.Context, messageID, fileKey, resType string) (io.Reader, error) {
+	if resType == "" {
+		resType = "image"
+	}
+	apiPath := fmt.Sprintf("/open-apis/im/v1/messages/%s/resources/%s?type=%s", messageID, fileKey, resType)
+	resp, err := c.Client.Get(ctx, apiPath, nil, larkcore.AccessTokenTypeTenant)
+	if err != nil {
+		return nil, fmt.Errorf("get message resource failed: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get message resource error: status=%d, body=%s", resp.StatusCode, string(resp.RawBody))
+	}
+	if len(resp.RawBody) == 0 {
+		return nil, fmt.Errorf("get message resource error: empty response")
+	}
+	return bytes.NewReader(resp.RawBody), nil
+}
+
+// DeleteMessage deletes (recalls) a message by its message ID.
+func (c *LarkClient) DeleteMessage(ctx context.Context, messageID string) error {
+	req := larkim.NewDeleteMessageReqBuilder().
+		MessageId(messageID).
+		Build()
+
+	resp, err := c.Client.Im.Message.Delete(ctx, req)
+	if err != nil {
+		return fmt.Errorf("delete message failed: %w", err)
+	}
+	if !resp.Success() {
+		return fmt.Errorf("delete message error: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+	return nil
 }
 
 // SendTextMessage is a convenience method for sending plain text.

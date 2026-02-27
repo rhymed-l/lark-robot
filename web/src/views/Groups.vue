@@ -8,7 +8,13 @@
     </div>
 
     <el-table :data="groups" stripe v-loading="loading">
-      <el-table-column prop="name" label="群名称">
+      <el-table-column label="头像" width="70">
+        <template #default="{ row }">
+          <el-avatar v-if="row.avatar" :src="row.avatar" :size="36" />
+          <el-avatar v-else :size="36">{{ (row.name || '?').charAt(0) }}</el-avatar>
+        </template>
+      </el-table-column>
+      <el-table-column prop="name" label="群名称" min-width="150">
         <template #default="{ row }">
           <router-link
             :to="{ path: '/chat/' + row.chat_id, query: { name: row.name } }"
@@ -18,10 +24,24 @@
           </router-link>
         </template>
       </el-table-column>
-      <el-table-column prop="chat_id" label="群 ID" width="280" />
-      <el-table-column prop="description" label="描述" />
-      <el-table-column prop="member_count" label="成员数" width="100" />
-      <el-table-column prop="synced_at" label="最后同步" width="180">
+      <el-table-column label="群模式" width="80">
+        <template #default="{ row }">
+          {{ chatModeLabel(row.chat_mode) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="群类型" width="80">
+        <template #default="{ row }">
+          {{ chatTypeLabel(row.chat_type) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="群标签" width="80">
+        <template #default="{ row }">
+          {{ chatTagLabel(row.chat_tag) }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="member_count" label="成员数" width="80" />
+      <el-table-column prop="bot_count" label="机器人" width="80" />
+      <el-table-column prop="synced_at" label="最后同步" width="170">
         <template #default="{ row }">
           {{ formatTime(row.synced_at) }}
         </template>
@@ -63,8 +83,12 @@ interface Group {
   id: number
   chat_id: string
   name: string
-  description: string
+  avatar: string
+  chat_mode: string
+  chat_type: string
+  chat_tag: string
   member_count: number
+  bot_count: number
   synced_at: string
 }
 
@@ -121,6 +145,24 @@ const handleLeave = async (chatId: string) => {
   } catch (e) {
     ElMessage.error('退出群组失败')
   }
+}
+
+const chatModeLabel = (mode: string) => {
+  const map: Record<string, string> = { group: '群组', topic: '话题', p2p: '单聊' }
+  return map[mode] || mode || '-'
+}
+
+const chatTypeLabel = (type: string) => {
+  const map: Record<string, string> = { private: '私有群', public: '公开群' }
+  return map[type] || type || '-'
+}
+
+const chatTagLabel = (tag: string) => {
+  const map: Record<string, string> = {
+    inner: '内部群', tenant: '公司群', department: '部门群',
+    edu: '教育群', meeting: '会议群', customer_service: '客服群',
+  }
+  return map[tag] || tag || '-'
 }
 
 const formatTime = (t: string) => {

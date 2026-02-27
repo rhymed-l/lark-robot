@@ -20,6 +20,7 @@ type Router struct {
 	dashboardAPI     *DashboardAPI
 	messageAPI       *MessageAPI
 	chatAPI          *ChatAPI
+	userAPI          *UserAPI
 	autoReplyAPI     *AutoReplyAPI
 	scheduledTaskAPI *ScheduledTaskAPI
 	authSecret       string
@@ -37,6 +38,7 @@ type RouterConfig struct {
 	MessageService   *service.MessageService
 	SchedulerService *service.SchedulerService
 	ReplyService     *service.ReplyService
+	UserService      *service.UserService
 	Broadcaster      *broadcast.MessageBroadcaster
 	FrontendFS       http.FileSystem
 	EmbeddedFS       fs.FS
@@ -51,9 +53,10 @@ func NewRouter(cfg RouterConfig) *Router {
 		Engine:             gin.New(),
 		logger:             cfg.Logger,
 		authAPI:            NewAuthAPI(cfg.AuthUsername, cfg.AuthPassword, cfg.AuthSecret),
-		dashboardAPI:       NewDashboardAPI(cfg.ChatService, cfg.MessageService, cfg.SchedulerService, cfg.ReplyService),
+		dashboardAPI:       NewDashboardAPI(cfg.ChatService, cfg.MessageService, cfg.SchedulerService, cfg.ReplyService, cfg.UserService),
 		messageAPI:         NewMessageAPI(cfg.MessageService, cfg.Broadcaster),
 		chatAPI:            NewChatAPI(cfg.ChatService),
+		userAPI:            NewUserAPI(cfg.UserService),
 		autoReplyAPI:       NewAutoReplyAPI(cfg.ReplyService),
 		scheduledTaskAPI:   NewScheduledTaskAPI(cfg.SchedulerService),
 		authSecret:         cfg.AuthSecret,
@@ -85,14 +88,22 @@ func (r *Router) setupRoutes() {
 
 		// Messages
 		authed.POST("/messages/send", r.messageAPI.Send)
+		authed.POST("/messages/reply", r.messageAPI.Reply)
+		authed.DELETE("/messages/:message_id", r.messageAPI.Delete)
 		authed.GET("/messages/logs", r.messageAPI.GetLogs)
 		authed.GET("/messages/conversations", r.messageAPI.Conversations)
 		authed.GET("/messages/stream", r.messageAPI.Stream)
+		authed.GET("/images/:message_id/:file_key", r.messageAPI.GetImage)
 
 		// Chats (groups)
 		authed.GET("/chats", r.chatAPI.List)
 		authed.POST("/chats/sync", r.chatAPI.Sync)
 		authed.POST("/chats/:chat_id/leave", r.chatAPI.Leave)
+
+		// Users
+		authed.GET("/users", r.userAPI.List)
+		authed.POST("/users/sync", r.userAPI.Sync)
+		authed.GET("/users/:open_id", r.userAPI.GetByOpenID)
 
 		// Auto-reply rules
 		rules := authed.Group("/auto-reply-rules")

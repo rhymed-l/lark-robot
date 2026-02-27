@@ -15,6 +15,8 @@ type MessageEvent struct {
 	Direction string    `json:"direction"` // "in" or "out"
 	MsgType   string    `json:"msg_type"`
 	Content   string    `json:"content"`
+	Recalled  bool      `json:"recalled,omitempty"`
+	MessageID string    `json:"message_id,omitempty"` // target message_id for recall events
 	CreatedAt time.Time `json:"created_at"`
 }
 

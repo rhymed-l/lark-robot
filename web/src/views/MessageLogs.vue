@@ -62,7 +62,7 @@
       </el-table-column>
       <el-table-column prop="content" label="内容" show-overflow-tooltip>
         <template #default="{ row }">
-          {{ parseContent(row.content) }}
+          <span v-html="renderContent(row.content, row.msg_type, row.message_id)"></span>
         </template>
       </el-table-column>
       <el-table-column prop="handled_by" label="处理器" width="120" />
@@ -94,7 +94,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { getMessageLogs, getChats, getConversations } from '../api/client'
+import { getMessageLogs, getChats, getConversations, getToken } from '../api/client'
 
 interface Log {
   id: number
@@ -132,13 +132,68 @@ const sourceLabel = (s: string) => {
   return map[s] || s
 }
 
-const parseContent = (content: string): string => {
+const escapeHtml = (text: string): string => {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+const highlightMentions = (text: string): string => {
+  return text.split(/(@\[[^\]]+\])/).map(part => {
+    const m = part.match(/^@\[([^\]]+)\]$/)
+    if (m) return `<span style="color: #3370ff; font-weight: 500">@${escapeHtml(m[1])}</span>`
+    return escapeHtml(part).replace(/@(\S+)/g, '<span style="color: #3370ff; font-weight: 500">@$1</span>')
+  }).join('')
+}
+
+const resourceUrl = (messageId: string, key: string, type: string = 'image'): string => {
+  return `/api/images/${encodeURIComponent(messageId)}/${encodeURIComponent(key)}?type=${type}&token=${getToken()}`
+}
+
+const imageUrl = (messageId: string, imageKey: string): string => {
+  return resourceUrl(messageId, imageKey, 'image')
+}
+
+const renderContent = (content: string, msgType: string, messageId?: string): string => {
+  if (msgType === 'image' && messageId) {
+    try {
+      const parsed = JSON.parse(content)
+      if (parsed.image_key) {
+        return `<img style="max-width:120px;max-height:120px;border-radius:4px" src="${imageUrl(messageId, parsed.image_key)}" alt="图片" />`
+      }
+    } catch {}
+    return '[图片]'
+  }
+
+  if (msgType === 'sticker' && messageId) {
+    try {
+      const parsed = JSON.parse(content)
+      if (parsed.file_key) {
+        return `<img style="max-width:80px;max-height:80px" src="${resourceUrl(messageId, parsed.file_key, 'file')}" alt="表情" />`
+      }
+    } catch {}
+    return '[表情]'
+  }
+
   try {
     const parsed = JSON.parse(content)
-    if (parsed.text) return parsed.text
-    return content
+    if (parsed.text) {
+      const text = parsed.text.replace(/<at user_id="[^"]*">([^<]*)<\/at>/g, '@[$1]')
+      return highlightMentions(text)
+    }
+    if (parsed.content && Array.isArray(parsed.content)) {
+      const parts: string[] = []
+      for (const line of parsed.content) {
+        if (!Array.isArray(line)) continue
+        for (const elem of line) {
+          if (elem.tag === 'text' && elem.text) parts.push(escapeHtml(elem.text))
+          else if (elem.tag === 'at' && elem.user_name) parts.push(`<span style="color: #3370ff; font-weight: 500">@${escapeHtml(elem.user_name)}</span>`)
+          else if (elem.tag === 'img' && elem.image_key && messageId) parts.push(`<img style="max-width:120px;max-height:120px;border-radius:4px" src="${imageUrl(messageId, elem.image_key)}" alt="图片" />`)
+        }
+      }
+      return parts.join('')
+    }
+    return escapeHtml(content)
   } catch {
-    return content
+    return escapeHtml(content)
   }
 }
 

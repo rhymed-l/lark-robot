@@ -30,6 +30,7 @@ func Init(dbPath string, zapLogger *zap.Logger) (*gorm.DB, error) {
 		&model.ScheduledTask{},
 		&model.MessageLog{},
 		&model.Group{},
+		&model.User{},
 	); err != nil {
 		return nil, err
 	}

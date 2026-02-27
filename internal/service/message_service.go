@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"go.uber.org/zap"
@@ -53,6 +54,35 @@ func (s *MessageService) SendMessage(ctx context.Context, receiveID, receiveIDTy
 	})
 
 	return msgID, nil
+}
+
+// ReplyMessage replies to a specific message and logs it.
+func (s *MessageService) ReplyMessage(ctx context.Context, messageID, msgType, content string) (string, error) {
+	replyMsgID, err := s.larkClient.ReplyMessage(ctx, messageID, msgType, content)
+	if err != nil {
+		return "", err
+	}
+
+	// Look up the original message's chat info for logging
+	chatID := ""
+	chatType := ""
+	original, err := s.logRepo.GetByMessageID(messageID)
+	if err == nil {
+		chatID = original.ChatID
+		chatType = original.ChatType
+	}
+
+	_ = s.logRepo.Create(&model.MessageLog{
+		MessageID: replyMsgID,
+		ChatID:    chatID,
+		ChatType:  chatType,
+		Direction: "out",
+		MsgType:   msgType,
+		Content:   content,
+		Source:    "manual",
+	})
+
+	return replyMsgID, nil
 }
 
 // LogIncomingMessage logs a received message and its handler result.
@@ -108,6 +138,20 @@ func (s *MessageService) ListConversations(ctx context.Context) ([]repository.Co
 	}
 
 	return conversations, nil
+}
+
+// DeleteMessage recalls a message via the Lark API and marks it as recalled in local logs.
+func (s *MessageService) DeleteMessage(ctx context.Context, messageID string) error {
+	if err := s.larkClient.DeleteMessage(ctx, messageID); err != nil {
+		return err
+	}
+	_ = s.logRepo.RecallByMessageID(messageID)
+	return nil
+}
+
+// GetMessageResource downloads a resource (image/file) from a Lark message.
+func (s *MessageService) GetMessageResource(ctx context.Context, messageID, fileKey, resType string) (io.Reader, error) {
+	return s.larkClient.GetMessageResource(ctx, messageID, fileKey, resType)
 }
 
 // CleanupGroupLogs deletes group chat logs older than the specified number of days.

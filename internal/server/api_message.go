@@ -47,6 +47,76 @@ func (api *MessageAPI) Send(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message_id": msgID})
 }
 
+type ReplyMessageRequest struct {
+	MessageID string `json:"message_id" binding:"required"`
+	MsgType   string `json:"msg_type" binding:"required"`
+	Content   string `json:"content" binding:"required"`
+}
+
+func (api *MessageAPI) Reply(c *gin.Context) {
+	var req ReplyMessageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	msgID, err := api.messageService.ReplyMessage(c.Request.Context(), req.MessageID, req.MsgType, req.Content)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message_id": msgID})
+}
+
+func (api *MessageAPI) Delete(c *gin.Context) {
+	messageID := c.Param("message_id")
+	if messageID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "message_id is required"})
+		return
+	}
+
+	if err := api.messageService.DeleteMessage(c.Request.Context(), messageID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+func (api *MessageAPI) GetImage(c *gin.Context) {
+	messageID := c.Param("message_id")
+	fileKey := c.Param("file_key")
+	if messageID == "" || fileKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "message_id and file_key are required"})
+		return
+	}
+
+	resType := c.DefaultQuery("type", "image")
+	reader, err := api.messageService.GetMessageResource(c.Request.Context(), messageID, fileKey, resType)
+	if err != nil {
+		fmt.Printf("[GetImage] error for msg=%s key=%s: %v\n", messageID, fileKey, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Read first 512 bytes for content type detection
+	buf := make([]byte, 512)
+	n, readErr := reader.Read(buf)
+	if n == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "empty image response"})
+		return
+	}
+
+	contentType := http.DetectContentType(buf[:n])
+	c.Header("Content-Type", contentType)
+	c.Header("Cache-Control", "public, max-age=86400")
+	c.Writer.Write(buf[:n])
+	if readErr != io.EOF {
+		io.Copy(c.Writer, reader)
+	}
+}
+
 func (api *MessageAPI) GetLogs(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))

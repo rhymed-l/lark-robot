@@ -24,7 +24,12 @@ func (r *GroupRepo) List(page, pageSize int) ([]model.Group, int64, error) {
 	r.db.Model(&model.Group{}).Count(&total)
 
 	offset := (page - 1) * pageSize
-	err := r.db.Order("name asc").Offset(offset).Limit(pageSize).Find(&groups).Error
+	err := r.db.
+		Select("groups.*").
+		Joins("LEFT JOIN (SELECT chat_id, MAX(created_at) as last_msg_at FROM message_logs GROUP BY chat_id) ml ON ml.chat_id = groups.chat_id").
+		Order("CASE WHEN ml.last_msg_at IS NULL THEN 1 ELSE 0 END, ml.last_msg_at DESC, groups.name ASC").
+		Offset(offset).Limit(pageSize).
+		Find(&groups).Error
 	return groups, total, err
 }
 
@@ -38,7 +43,10 @@ func (r *GroupRepo) Upsert(group *model.Group) error {
 	group.SyncedAt = time.Now()
 	return r.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "chat_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"name", "description", "owner_id", "member_count", "external", "synced_at", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{
+			"name", "avatar", "description", "chat_mode", "chat_type", "chat_tag",
+			"owner_id", "member_count", "bot_count", "external", "synced_at", "updated_at",
+		}),
 	}).Create(group).Error
 }
 

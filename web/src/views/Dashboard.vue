@@ -1,8 +1,8 @@
 <template>
   <div>
     <h2>仪表盘</h2>
-    <el-row :gutter="20">
-      <el-col :span="6">
+    <el-row :gutter="20" style="margin-bottom: 20px">
+      <el-col :span="8">
         <el-card shadow="hover">
           <template #header>群组数量</template>
           <div style="font-size: 32px; text-align: center; color: #409EFF">
@@ -10,7 +10,25 @@
           </div>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="8">
+        <el-card shadow="hover">
+          <template #header>用户数量</template>
+          <div style="font-size: 32px; text-align: center; color: #909399">
+            {{ stats.user_count }}
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :span="8">
+        <el-card shadow="hover">
+          <template #header>今日消息</template>
+          <div style="font-size: 32px; text-align: center; color: #F56C6C">
+            {{ stats.messages_today }}
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
+    <el-row :gutter="20">
+      <el-col :span="12">
         <el-card shadow="hover">
           <template #header>回复规则</template>
           <div style="font-size: 32px; text-align: center; color: #67C23A">
@@ -18,19 +36,11 @@
           </div>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="12">
         <el-card shadow="hover">
           <template #header>定时任务</template>
           <div style="font-size: 32px; text-align: center; color: #E6A23C">
             {{ stats.task_count }}
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover">
-          <template #header>今日消息</template>
-          <div style="font-size: 32px; text-align: center; color: #F56C6C">
-            {{ stats.messages_today }}
           </div>
         </el-card>
       </el-col>
@@ -44,6 +54,7 @@ import { getDashboardStats } from '../api/client'
 
 const stats = ref({
   group_count: 0,
+  user_count: 0,
   rule_count: 0,
   task_count: 0,
   messages_today: 0,

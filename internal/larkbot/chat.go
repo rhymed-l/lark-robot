@@ -3,6 +3,7 @@ package larkbot
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
@@ -11,9 +12,14 @@ import (
 type ChatInfo struct {
 	ChatID      string
 	Name        string
+	Avatar      string
 	Description string
+	ChatMode    string
+	ChatType    string
+	ChatTag     string
 	OwnerID     string
 	MemberCount int
+	BotCount    int
 	External    bool
 }
 
@@ -41,6 +47,9 @@ func (c *LarkClient) ListChats(ctx context.Context) ([]ChatInfo, error) {
 			chat := ChatInfo{
 				ChatID: deref(item.ChatId),
 				Name:   deref(item.Name),
+			}
+			if item.Avatar != nil {
+				chat.Avatar = deref(item.Avatar)
 			}
 			if item.Description != nil {
 				chat.Description = *item.Description
@@ -97,11 +106,31 @@ func (c *LarkClient) GetChatInfo(ctx context.Context, chatID string) (*ChatInfo,
 		return nil, fmt.Errorf("get chat info error: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
+	memberCount := 0
+	if resp.Data.UserCount != nil {
+		memberCount, _ = strconv.Atoi(*resp.Data.UserCount)
+	}
+	botCount := 0
+	if resp.Data.BotCount != nil {
+		botCount, _ = strconv.Atoi(*resp.Data.BotCount)
+	}
+
+	avatar := ""
+	if resp.Data.Avatar != nil {
+		avatar = deref(resp.Data.Avatar)
+	}
+
 	return &ChatInfo{
 		ChatID:      chatID,
 		Name:        deref(resp.Data.Name),
+		Avatar:      avatar,
 		Description: deref(resp.Data.Description),
+		ChatMode:    deref(resp.Data.ChatMode),
+		ChatType:    deref(resp.Data.ChatType),
+		ChatTag:     deref(resp.Data.ChatTag),
 		OwnerID:     deref(resp.Data.OwnerId),
+		MemberCount: memberCount,
+		BotCount:    botCount,
 		External:    resp.Data.External != nil && *resp.Data.External,
 	}, nil
 }

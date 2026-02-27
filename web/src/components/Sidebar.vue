@@ -18,6 +18,10 @@
       <span>聊天</span>
       <el-badge v-if="totalUnread > 0" :value="totalUnread" :max="99" class="chat-badge" />
     </el-menu-item>
+    <el-menu-item index="/users">
+      <el-icon><User /></el-icon>
+      <span>用户管理</span>
+    </el-menu-item>
     <el-menu-item index="/groups">
       <el-icon><List /></el-icon>
       <span>群组管理</span>
@@ -62,6 +66,7 @@ import {
   Promotion,
   Document,
   List,
+  User,
   SwitchButton,
 } from '@element-plus/icons-vue'
 import { logout } from '../api/client'

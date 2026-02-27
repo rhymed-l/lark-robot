@@ -3,39 +3,34 @@ package larkbot
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 )
 
-// UserInfo holds basic user information.
+// UserInfo holds user information from the Lark API.
 type UserInfo struct {
-	OpenID string
-	Name   string
-	Avatar string
+	OpenID       string
+	UnionID      string
+	UserID       string
+	Name         string
+	EnName       string
+	Avatar       string
+	Email        string
+	JobTitle     string
+	WorkStation  string
+	EmployeeNo   string
+	Gender       int
+	LeaderUserID string
+	JoinTime     int64
 }
 
-// userCache caches user info to avoid repeated API calls.
-var (
-	userCache   = make(map[string]*UserInfo)
-	userCacheMu sync.RWMutex
-)
-
-// GetUserInfo retrieves user info by open_id, with in-memory caching.
+// GetUserInfo retrieves user info by open_id via the Lark API.
+// Caching is managed externally by UserService.
 func (c *LarkClient) GetUserInfo(ctx context.Context, openID string) (*UserInfo, error) {
 	if openID == "" {
 		return &UserInfo{OpenID: "", Name: "未知"}, nil
 	}
 
-	// Check cache
-	userCacheMu.RLock()
-	if info, ok := userCache[openID]; ok {
-		userCacheMu.RUnlock()
-		return info, nil
-	}
-	userCacheMu.RUnlock()
-
-	// Query Lark API
 	req := larkcontact.NewGetUserReqBuilder().
 		UserId(openID).
 		UserIdType("open_id").
@@ -49,28 +44,43 @@ func (c *LarkClient) GetUserInfo(ctx context.Context, openID string) (*UserInfo,
 		return &UserInfo{OpenID: openID, Name: openID}, fmt.Errorf("get user info error: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
+	user := resp.Data.User
 	info := &UserInfo{
 		OpenID: openID,
-		Name:   deref(resp.Data.User.Name),
-	}
-	if resp.Data.User.Avatar != nil {
-		info.Avatar = deref(resp.Data.User.Avatar.AvatarOrigin)
+		Name:   deref(user.Name),
+		EnName: deref(user.EnName),
 	}
 
-	// Store in cache
-	userCacheMu.Lock()
-	userCache[openID] = info
-	userCacheMu.Unlock()
+	if user.UnionId != nil {
+		info.UnionID = *user.UnionId
+	}
+	if user.UserId != nil {
+		info.UserID = *user.UserId
+	}
+	if user.Avatar != nil {
+		info.Avatar = deref(user.Avatar.AvatarOrigin)
+	}
+	if user.Email != nil {
+		info.Email = *user.Email
+	}
+	if user.JobTitle != nil {
+		info.JobTitle = *user.JobTitle
+	}
+	if user.WorkStation != nil {
+		info.WorkStation = *user.WorkStation
+	}
+	if user.EmployeeNo != nil {
+		info.EmployeeNo = *user.EmployeeNo
+	}
+	if user.Gender != nil {
+		info.Gender = *user.Gender
+	}
+	if user.LeaderUserId != nil {
+		info.LeaderUserID = *user.LeaderUserId
+	}
+	if user.JoinTime != nil {
+		info.JoinTime = int64(*user.JoinTime)
+	}
 
 	return info, nil
-}
-
-// GetCachedUserName returns cached user name, or the openID itself if not cached.
-func GetCachedUserName(openID string) string {
-	userCacheMu.RLock()
-	defer userCacheMu.RUnlock()
-	if info, ok := userCache[openID]; ok {
-		return info.Name
-	}
-	return openID
 }

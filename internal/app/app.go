@@ -44,6 +44,7 @@ type App struct {
 	replyService     *service.ReplyService
 	chatService      *service.ChatService
 	schedulerService *service.SchedulerService
+	userService      *service.UserService
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -64,6 +65,7 @@ func New(cfg *config.Config) (*App, error) {
 	taskRepo := repository.NewScheduledTaskRepo(db)
 	logRepo := repository.NewMessageLogRepo(db)
 	groupRepo := repository.NewGroupRepo(db)
+	userRepo := repository.NewUserRepo(db)
 
 	// 4. Create Lark client and fetch bot info
 	larkClient := larkbot.NewLarkClient(cfg.Lark.AppID, cfg.Lark.AppSecret, cfg.Lark.BaseURL)
@@ -73,8 +75,9 @@ func New(cfg *config.Config) (*App, error) {
 		logger.Info("bot info loaded", zap.String("open_id", larkClient.BotOpenID))
 	}
 
-	// 5. Create message service
+	// 5. Create services
 	msgService := service.NewMessageService(larkClient, logRepo, logger)
+	userService := service.NewUserService(larkClient, userRepo, logger)
 
 	// 6. Build handler chain
 	keywordHandler := handler.NewKeywordHandler(nil)
@@ -112,8 +115,8 @@ func New(cfg *config.Config) (*App, error) {
 				go chatService.AutoSyncGroup(ctx, msg.ChatID)
 			}
 
-			// Resolve sender name
-			userInfo, err := larkClient.GetUserInfo(ctx, msg.SenderID)
+			// Resolve sender name via UserService (cache -> DB -> Lark API)
+			userInfo, err := userService.GetUserInfo(ctx, msg.SenderID)
 			if err != nil {
 				logger.Debug("failed to get user info", zap.String("sender_id", msg.SenderID), zap.Error(err))
 			}
@@ -122,6 +125,9 @@ func New(cfg *config.Config) (*App, error) {
 				senderName = userInfo.Name
 				msg.SenderName = userInfo.Name
 			}
+
+			// Persist user info and increment message count asynchronously
+			go userService.OnMessageReceived(ctx, msg.SenderID)
 
 			logger.Info("received message",
 				zap.String("chat_id", msg.ChatID),
@@ -166,6 +172,34 @@ func New(cfg *config.Config) (*App, error) {
 
 			msgService.LogIncomingMessage(msg, result, "")
 			return nil
+		}).
+		OnP2MessageRecalledV1(func(ctx context.Context, event *larkim.P2MessageRecalledV1) error {
+			if event.Event == nil || event.Event.MessageId == nil {
+				return nil
+			}
+			messageID := *event.Event.MessageId
+			chatID := ""
+			if event.Event.ChatId != nil {
+				chatID = *event.Event.ChatId
+			}
+
+			logger.Info("message recalled",
+				zap.String("message_id", messageID),
+				zap.String("chat_id", chatID),
+			)
+
+			// Mark as recalled in database
+			_ = logRepo.RecallByMessageID(messageID)
+
+			// Broadcast recall event to SSE subscribers
+			broadcaster.Publish(broadcast.MessageEvent{
+				ChatID:    chatID,
+				Recalled:  true,
+				MessageID: messageID,
+				CreatedAt: time.Now(),
+			})
+
+			return nil
 		})
 
 	// Build WebSocket client for long connection
@@ -188,6 +222,7 @@ func New(cfg *config.Config) (*App, error) {
 		MessageService:   msgService,
 		SchedulerService: schedulerService,
 		ReplyService:     replyService,
+		UserService:      userService,
 		Broadcaster:      broadcaster,
 		FrontendFS:       frontendFS,
 		EmbeddedFS:       distFS,
@@ -207,6 +242,7 @@ func New(cfg *config.Config) (*App, error) {
 		replyService:     replyService,
 		chatService:      chatService,
 		schedulerService: schedulerService,
+		userService:      userService,
 	}, nil
 }
 
@@ -266,6 +302,9 @@ func parseIncomingMessage(event *larkim.P2MessageReceiveV1, botOpenID string) *h
 	}
 
 	content := deref(msg.Content)
+
+	// Replace @mention placeholders with real names in both content and text
+	content = replaceMentions(content, msg.Mentions)
 	textContent := extractText(content)
 
 	return &handler.IncomingMessage{
@@ -316,11 +355,28 @@ func extractPostText(content []interface{}) string {
 					sb.WriteString(text)
 				}
 			case "at":
-				// Skip @mentions in text extraction
+				if name, ok := elemMap["user_name"].(string); ok && name != "" {
+					sb.WriteString("@[" + name + "]")
+				}
 			}
 		}
 	}
 	return strings.TrimSpace(sb.String())
+}
+
+// replaceMentions replaces @_user_1 placeholders with actual names from the mentions list.
+// Names are wrapped as @[Name] so the frontend can identify the full mention boundary.
+func replaceMentions(text string, mentions []*larkim.MentionEvent) string {
+	for _, m := range mentions {
+		if m.Key != nil && m.Name != nil {
+			text = strings.ReplaceAll(text, *m.Key, "@["+*m.Name+"]")
+		}
+	}
+	// Fallback: replace @_all if not already handled by mentions list
+	if strings.Contains(text, "@_all") {
+		text = strings.ReplaceAll(text, "@_all", "@[所有人]")
+	}
+	return text
 }
 
 func containsBotMention(mentions []*larkim.MentionEvent, botOpenID string) bool {
