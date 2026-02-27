@@ -49,12 +49,17 @@ func (api *UserAPI) Sync(c *gin.Context) {
 }
 
 // GetByOpenID returns a user by open_id.
+// If the user is not in the database, it fetches from Lark API and persists.
 func (api *UserAPI) GetByOpenID(c *gin.Context) {
 	openID := c.Param("open_id")
 	user, err := api.userService.GetUser(openID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		return
+		// Not in DB yet — try fetching from Lark API
+		user, err = api.userService.SyncUser(c.Request.Context(), openID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"data": user})
 }

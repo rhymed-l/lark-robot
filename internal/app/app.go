@@ -98,6 +98,7 @@ func New(cfg *config.Config) (*App, error) {
 	sched := scheduler.New(
 		scheduledSendFunc,
 		taskRepo.UpdateLastRunAt,
+		taskRepo.UpdateNextRunAt,
 		logger,
 	)
 	schedulerService := service.NewSchedulerService(taskRepo, sched, logger)
@@ -254,9 +255,11 @@ func (a *App) Start() error {
 	a.sched.Start()
 
 	// Register daily cleanup: delete group chat logs older than 7 days (runs at 02:00 every day)
-	a.sched.AddCleanupJob("0 0 2 * * *", func() {
+	if err := a.sched.AddCleanupJob("0 0 2 * * *", func() {
 		a.messageService.CleanupGroupLogs(7)
-	})
+	}); err != nil {
+		a.logger.Error("failed to register cleanup job", zap.Error(err))
+	}
 
 	// Start Lark WebSocket long connection in background
 	go func() {

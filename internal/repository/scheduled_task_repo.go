@@ -1,9 +1,11 @@
 package repository
 
 import (
-	"lark-robot/internal/model"
+	"time"
 
 	"gorm.io/gorm"
+
+	"lark-robot/internal/model"
 )
 
 type ScheduledTaskRepo struct {
@@ -59,4 +61,10 @@ func (r *ScheduledTaskRepo) UpdateLastRunAt(id uint) error {
 	return r.db.Model(&model.ScheduledTask{}).
 		Where("id = ?", id).
 		Update("last_run_at", gorm.Expr("datetime('now')")).Error
+}
+
+func (r *ScheduledTaskRepo) UpdateNextRunAt(id uint, t time.Time) error {
+	return r.db.Model(&model.ScheduledTask{}).
+		Where("id = ?", id).
+		Update("next_run_at", t).Error
 }

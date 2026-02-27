@@ -18,22 +18,31 @@ type SendFunc func(ctx context.Context, chatID, msgType, content, source string)
 // UpdateLastRunFunc is called after a scheduled task runs.
 type UpdateLastRunFunc func(id uint) error
 
+// UpdateNextRunFunc updates the next scheduled run time for a task.
+type UpdateNextRunFunc func(id uint, t time.Time) error
+
 type Scheduler struct {
 	cron          *cron.Cron
 	entries       map[uint]cron.EntryID
 	mu            sync.Mutex
 	sendFunc      SendFunc
 	updateLastRun UpdateLastRunFunc
+	updateNextRun UpdateNextRunFunc
 	logger        *zap.Logger
 }
 
-func New(sendFunc SendFunc, updateLastRun UpdateLastRunFunc, logger *zap.Logger) *Scheduler {
-	c := cron.New(cron.WithSeconds())
+func New(sendFunc SendFunc, updateLastRun UpdateLastRunFunc, updateNextRun UpdateNextRunFunc, logger *zap.Logger) *Scheduler {
+	// Support both 5-field (minute-level) and 6-field (second-level) cron expressions
+	parser := cron.NewParser(
+		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
+	)
+	c := cron.New(cron.WithParser(parser))
 	return &Scheduler{
 		cron:          c,
 		entries:       make(map[uint]cron.EntryID),
 		sendFunc:      sendFunc,
 		updateLastRun: updateLastRun,
+		updateNextRun: updateNextRun,
 		logger:        logger,
 	}
 }
@@ -83,12 +92,39 @@ func (s *Scheduler) AddTask(task *model.ScheduledTask) error {
 			)
 		}
 
+		// Update next_run_at after execution
+		s.mu.Lock()
+		if eid, ok := s.entries[taskID]; ok {
+			entry := s.cron.Entry(eid)
+			if !entry.Next.IsZero() {
+				if err := s.updateNextRun(taskID, entry.Next); err != nil {
+					s.logger.Error("failed to update next_run_at",
+						zap.Uint("task_id", taskID),
+						zap.Error(err),
+					)
+				}
+			}
+		}
+		s.mu.Unlock()
+
 		s.logger.Info("scheduled task executed", zap.Uint("task_id", taskID))
 	})
 	if err != nil {
 		return fmt.Errorf("invalid cron expression %q: %w", task.CronExpr, err)
 	}
 	s.entries[task.ID] = entryID
+
+	// Set initial next_run_at
+	entry := s.cron.Entry(entryID)
+	if !entry.Next.IsZero() {
+		if err := s.updateNextRun(taskID, entry.Next); err != nil {
+			s.logger.Error("failed to set initial next_run_at",
+				zap.Uint("task_id", taskID),
+				zap.Error(err),
+			)
+		}
+	}
+
 	return nil
 }
 

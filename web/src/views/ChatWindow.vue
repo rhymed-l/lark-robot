@@ -48,7 +48,7 @@
               <div class="chat-item-body">
                 <el-avatar
                   :size="36"
-                  :src="conv.sender_id ? (avatarMap[conv.sender_id] || undefined) : undefined"
+                  :src="avatarMap[conv.sender_id || ''] || avatarMap[conv.chat_id] || undefined"
                   class="chat-item-avatar"
                 >
                   {{ (conv.name || '?').charAt(0) }}
@@ -253,26 +253,92 @@ const handleImageClick = (e: MouseEvent) => {
   }
 }
 
-// User avatar cache
+// User info cache (avatar + name)
 const avatarMap = ref<Record<string, string>>({})
-const avatarLoading = new Set<string>()
+const userNameMap = ref<Record<string, string>>({})
+const userInfoLoading = new Set<string>()
+const userInfoFetched = new Set<string>() // tracks successfully fetched IDs
 
-const fetchAvatar = async (senderId: string) => {
-  if (!senderId || avatarMap.value[senderId] !== undefined || avatarLoading.has(senderId)) return
-  avatarLoading.add(senderId)
-  try {
-    const res = await getUserByOpenID(senderId)
-    avatarMap.value[senderId] = res.data.data?.avatar || ''
-  } catch {
-    avatarMap.value[senderId] = ''
-  } finally {
-    avatarLoading.delete(senderId)
+// Deduplicate private chats by sender_id: merge entries for the same user
+const deduplicatePrivateChats = () => {
+  const seen = new Map<string, number>() // sender_id -> index of best entry
+  const toRemove = new Set<number>()
+
+  for (let i = 0; i < privateChats.value.length; i++) {
+    const chat = privateChats.value[i]
+    const key = chat.sender_id || chat.chat_id
+    if (!key) continue
+
+    if (seen.has(key)) {
+      const existingIdx = seen.get(key)!
+      const existing = privateChats.value[existingIdx]
+      // Keep the one with the real name, merge description
+      const existingHasName = existing.name && !existing.name.startsWith('ou_') && !existing.name.startsWith('oc_')
+      const currentHasName = chat.name && !chat.name.startsWith('ou_') && !chat.name.startsWith('oc_')
+      if (!existingHasName && currentHasName) {
+        // Current is better, swap
+        existing.name = chat.name
+        if (chat.avatar) existing.avatar = chat.avatar
+      }
+      toRemove.add(i)
+    } else {
+      seen.set(key, i)
+    }
+  }
+
+  if (toRemove.size > 0) {
+    privateChats.value = privateChats.value.filter((_, i) => !toRemove.has(i))
   }
 }
 
+const fetchUserInfo = async (openId: string) => {
+  if (!openId || userInfoLoading.has(openId) || userInfoFetched.has(openId)) return
+  userInfoLoading.add(openId)
+  try {
+    const res = await getUserByOpenID(openId)
+    const user = res.data.data
+    if (user) {
+      userInfoFetched.add(openId)
+      const avatar = user.avatar || ''
+      avatarMap.value[openId] = avatar
+      if (user.name) {
+        userNameMap.value[openId] = user.name
+        // Also store under matching sender_id/chat_id so template lookups work
+        privateChats.value.forEach(chat => {
+          if (chat.sender_id === openId && chat.chat_id !== openId) {
+            avatarMap.value[chat.chat_id] = avatar
+          }
+          if (chat.chat_id === openId && chat.sender_id && chat.sender_id !== openId) {
+            avatarMap.value[chat.sender_id] = avatar
+            userNameMap.value[chat.sender_id] = user.name
+          }
+          // Update name if still showing an ID
+          if ((chat.sender_id === openId || chat.chat_id === openId) &&
+              (!chat.name || chat.name.startsWith('ou_') || chat.name.startsWith('oc_'))) {
+            chat.name = user.name
+          }
+        })
+        deduplicatePrivateChats()
+        // Update active chat header if needed
+        if (activeChatName.value.startsWith('ou_') || activeChatName.value.startsWith('oc_')) {
+          if (activeChatId.value === openId || privateChats.value.some(c => c.chat_id === activeChatId.value && c.sender_id === openId)) {
+            activeChatName.value = user.name
+          }
+        }
+      }
+    }
+  } catch {
+    // Don't cache failures — allow retry on next call
+  } finally {
+    userInfoLoading.delete(openId)
+  }
+}
+
+const fetchAvatar = fetchUserInfo
+
 const fetchAvatars = (msgs: Message[]) => {
   const ids = new Set(msgs.filter(m => m.direction === 'in' && m.sender_id).map(m => m.sender_id))
-  ids.forEach(id => fetchAvatar(id))
+  ids.forEach(id => fetchUserInfo(id))
 }
 
 let eventSource: EventSource | null = null
@@ -596,12 +662,16 @@ const loadPrivateChats = async () => {
       .filter((c: any) => c.chat_type === 'p2p')
       .map((c: any) => ({
         chat_id: c.chat_id,
-        name: c.sender_name || c.chat_id,
+        name: c.sender_name || userNameMap.value[c.sender_id] || c.chat_id,
         description: `${c.msg_count} 条消息`,
         sender_id: c.sender_id || '',
       }))
-    // Fetch avatars for private chat users
-    privateChats.value.forEach(c => { if (c.sender_id) fetchAvatar(c.sender_id) })
+    // Deduplicate then fetch user info (avatar + name)
+    deduplicatePrivateChats()
+    privateChats.value.forEach(c => {
+      const id = c.sender_id || c.chat_id
+      if (id) fetchUserInfo(id)
+    })
   } catch (e) {
     console.error('加载私聊列表失败', e)
   }
@@ -677,6 +747,11 @@ const switchChat = (item: ChatItem) => {
   messages.value = []
   clearChatUnread(item.chat_id)
   router.replace({ path: `/chat/${item.chat_id}`, query: { name: item.name } })
+  // If name is still an ID, fetch user info to resolve it
+  if (activeChatName.value.startsWith('ou_') || activeChatName.value.startsWith('oc_')) {
+    const id = item.sender_id || item.chat_id
+    fetchUserInfo(id)
+  }
   loadHistory()
   connectSSE()
 }
@@ -733,24 +808,41 @@ const handleReedit = (msg: Message) => {
   messages.value = messages.value.filter(m => m !== msg)
 }
 
-const handleStartPrivateChat = () => {
+const handleStartPrivateChat = async () => {
   const msg = contextMenu.value.msg
   hideContextMenu()
   if (!msg?.sender_id) return
 
-  const senderName = msg.sender_name || msg.sender_id
+  // Resolve name: prefer sender_name > cached name > fetch from API
+  let senderName = msg.sender_name || userNameMap.value[msg.sender_id] || ''
+  if (!senderName || senderName.startsWith('ou_')) {
+    try {
+      const res = await getUserByOpenID(msg.sender_id)
+      const user = res.data.data
+      if (user?.name) {
+        senderName = user.name
+        userNameMap.value[msg.sender_id] = user.name
+        avatarMap.value[msg.sender_id] = user.avatar || ''
+      }
+    } catch { /* fallback below */ }
+  }
+  if (!senderName) senderName = msg.sender_id
+
   // Check if already in private chats list
-  const existing = privateChats.value.find(c => c.name === senderName)
+  const existing = privateChats.value.find(c => c.sender_id === msg.sender_id || c.chat_id === msg.sender_id)
   if (existing) {
+    if (senderName && !existing.name.startsWith('ou_')) existing.name = existing.name
+    else existing.name = senderName
     activeTab.value = 'private'
     switchChat(existing)
     return
   }
   // Add as temporary private chat entry and switch to it
   const tempChat: ChatItem = {
-    chat_id: msg.sender_id, // Use open_id as chat_id temporarily
+    chat_id: msg.sender_id,
     name: senderName,
     description: '新对话',
+    sender_id: msg.sender_id,
   }
   privateChats.value.unshift(tempChat)
   activeTab.value = 'private'
@@ -819,6 +911,10 @@ onMounted(async () => {
     // Auto-select correct tab
     if (!groups.value.find((g) => g.chat_id === chatId)) {
       activeTab.value = 'private'
+    }
+    // Resolve name if still showing an ID
+    if (activeChatName.value.startsWith('ou_')) {
+      fetchUserInfo(activeChatName.value)
     }
     clearChatUnread(chatId)
     loadHistory()
