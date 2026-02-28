@@ -111,6 +111,16 @@ func (api *MessageAPI) GetImage(c *gin.Context) {
 	contentType := http.DetectContentType(buf[:n])
 	c.Header("Content-Type", contentType)
 	c.Header("Cache-Control", "public, max-age=86400")
+
+	// For file downloads, set Content-Disposition to trigger browser download
+	if resType == "file" {
+		fileName := c.Query("filename")
+		if fileName == "" {
+			fileName = fileKey
+		}
+		c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileName))
+	}
+
 	c.Writer.Write(buf[:n])
 	if readErr != io.EOF {
 		io.Copy(c.Writer, reader)

@@ -46,13 +46,28 @@ func (api *UserAPI) List(c *gin.Context) {
 }
 
 // Sync re-fetches all users from Lark API and updates the database.
+// If a JSON body with "open_ids" is provided, only those users are synced (for retrying).
 func (api *UserAPI) Sync(c *gin.Context) {
-	synced, err := api.userService.SyncAllUsers(c.Request.Context())
+	var body struct {
+		OpenIDs []string `json:"open_ids"`
+	}
+	_ = c.ShouldBindJSON(&body)
+
+	var result *service.SyncResult
+	var err error
+
+	if len(body.OpenIDs) > 0 {
+		// Specific users: force sync (bypass 1-hour cooldown)
+		result, err = api.userService.SyncByIDs(c.Request.Context(), body.OpenIDs, true)
+	} else {
+		result, err = api.userService.SyncAllUsers(c.Request.Context())
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "sync completed", "synced": synced})
+
+	c.JSON(http.StatusOK, result)
 }
 
 // GetByOpenID returns a user by open_id.

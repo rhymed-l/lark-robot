@@ -6,37 +6,6 @@
         <el-input v-model="searchText" placeholder="搜索会话" size="small" clearable />
       </div>
       <el-tabs v-model="activeTab" class="chat-tabs" stretch>
-        <el-tab-pane label="群聊" name="group">
-          <div class="chat-sidebar-list">
-            <div
-              v-for="group in filteredGroups"
-              :key="group.chat_id"
-              :class="['chat-item', { active: group.chat_id === activeChatId }]"
-              @click="switchChat(group)"
-            >
-              <div class="chat-item-body">
-                <el-avatar :size="36" :src="group.avatar || undefined" class="chat-item-avatar">
-                  {{ (group.name || '?').charAt(0) }}
-                </el-avatar>
-                <div class="chat-item-info">
-                  <div class="chat-item-top">
-                    <span class="chat-item-name">{{ group.name || group.chat_id }}</span>
-                    <el-badge
-                      v-if="unreadMap[group.chat_id]"
-                      :value="unreadMap[group.chat_id]"
-                      :max="99"
-                      class="item-badge"
-                    />
-                  </div>
-                  <div class="chat-item-desc">{{ group.description || group.chat_id }}</div>
-                </div>
-              </div>
-            </div>
-            <div v-if="filteredGroups.length === 0" class="chat-empty">
-              <el-text type="info" size="small">暂无群组</el-text>
-            </div>
-          </div>
-        </el-tab-pane>
         <el-tab-pane label="私聊" name="private">
           <div class="chat-sidebar-list">
             <div
@@ -69,6 +38,37 @@
             </div>
             <div v-if="filteredPrivateChats.length === 0" class="chat-empty">
               <el-text type="info" size="small">暂无私聊</el-text>
+            </div>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane label="群聊" name="group">
+          <div class="chat-sidebar-list">
+            <div
+              v-for="group in filteredGroups"
+              :key="group.chat_id"
+              :class="['chat-item', { active: group.chat_id === activeChatId }]"
+              @click="switchChat(group)"
+            >
+              <div class="chat-item-body">
+                <el-avatar :size="36" :src="group.avatar || undefined" class="chat-item-avatar">
+                  {{ (group.name || '?').charAt(0) }}
+                </el-avatar>
+                <div class="chat-item-info">
+                  <div class="chat-item-top">
+                    <span class="chat-item-name">{{ group.name || group.chat_id }}</span>
+                    <el-badge
+                      v-if="unreadMap[group.chat_id]"
+                      :value="unreadMap[group.chat_id]"
+                      :max="99"
+                      class="item-badge"
+                    />
+                  </div>
+                  <div class="chat-item-desc">{{ group.description || group.chat_id }}</div>
+                </div>
+              </div>
+            </div>
+            <div v-if="filteredGroups.length === 0" class="chat-empty">
+              <el-text type="info" size="small">暂无群组</el-text>
             </div>
           </div>
         </el-tab-pane>
@@ -114,18 +114,27 @@
                 v-if="msg.direction === 'in'"
                 :size="32"
                 :src="avatarMap[msg.sender_id] || undefined"
-                class="message-avatar"
+                class="message-avatar message-avatar-clickable"
+                @click="showUserProfile(msg.sender_id)"
               >
                 {{ (msg.sender_name || msg.sender_id || '?').charAt(0) }}
               </el-avatar>
               <div class="message-bubble">
                 <div class="message-meta">
                   <span v-if="msg.direction === 'in'" class="sender sender-clickable" @click="insertMention(msg)">{{ msg.sender_name || msg.sender_id || '用户' }}</span>
-                  <span v-else class="sender">机器人</span>
+                  <span v-else class="sender">{{ botDisplayName }}</span>
                   <span class="time">{{ formatTime(msg.created_at) }}</span>
                 </div>
                 <div class="message-text" v-html="renderContent(msg.content, msg.msg_type, msg.message_id)"></div>
               </div>
+              <el-avatar
+                v-if="msg.direction === 'out'"
+                :size="32"
+                :src="botInfo.avatar_url || undefined"
+                class="message-avatar-out"
+              >
+                {{ botDisplayName.charAt(0) }}
+              </el-avatar>
             </template>
           </div>
           <div v-if="messages.length === 0 && !loading" style="text-align: center; padding: 40px">
@@ -137,7 +146,7 @@
         <div v-if="replyTo" class="reply-bar">
           <div class="reply-info">
             <span class="reply-label">回复</span>
-            <span class="reply-name">{{ replyTo.direction === 'in' ? (replyTo.sender_name || replyTo.sender_id || '用户') : '机器人' }}</span>
+            <span class="reply-name">{{ replyTo.direction === 'in' ? (replyTo.sender_name || replyTo.sender_id || '用户') : botDisplayName }}</span>
             <span class="reply-text">{{ parseContent(replyTo.content) }}</span>
           </div>
           <el-button text size="small" @click="replyTo = null" style="color: #909399">
@@ -145,8 +154,26 @@
           </el-button>
         </div>
 
+        <!-- Attachment preview -->
+        <div v-if="pendingFiles.length > 0" class="attachment-preview">
+          <div v-for="(f, idx) in pendingFiles" :key="idx" class="attachment-item">
+            <img v-if="f.previewUrl" :src="f.previewUrl" class="attachment-thumb" />
+            <el-icon v-else :size="24"><Document /></el-icon>
+            <span class="attachment-name">{{ f.file.name }}</span>
+            <el-icon class="attachment-remove" @click="removePendingFile(idx)"><Close /></el-icon>
+          </div>
+        </div>
+
         <!-- Input -->
         <div class="input-area">
+          <div class="input-actions">
+            <el-tooltip content="发送图片" placement="top">
+              <el-icon class="action-icon" @click="triggerImagePicker"><PictureFilled /></el-icon>
+            </el-tooltip>
+            <el-tooltip content="发送文件" placement="top">
+              <el-icon class="action-icon" @click="triggerFilePicker"><FolderOpened /></el-icon>
+            </el-tooltip>
+          </div>
           <div
             ref="editorRef"
             class="mention-editor"
@@ -154,10 +181,13 @@
             :class="{ disabled: sending }"
             :data-placeholder="replyTo ? '回复消息...' : '输入消息，按 Enter 发送...'"
             @keydown="handleEditorKeydown"
+            @paste="handlePaste"
           ></div>
           <el-button type="primary" @click="handleSend" :loading="sending" style="margin-left: 8px">
             发送
           </el-button>
+          <input ref="imageInputRef" type="file" accept="image/*" multiple style="display:none" @change="handleImagePicked" />
+          <input ref="fileInputRef" type="file" multiple style="display:none" @change="handleFilePicked" />
         </div>
       </template>
 
@@ -186,7 +216,7 @@
           <el-text type="info">加载中...</el-text>
         </div>
         <div v-else ref="membersListRef" class="members-list" @scroll="onMembersScroll">
-          <div v-for="member in chatMembers" :key="member.member_id" class="member-item">
+          <div v-for="member in chatMembers" :key="member.member_id" class="member-item member-item-clickable" @click="showUserProfile(member.member_id)">
             <el-avatar :size="32" :src="avatarMap[member.member_id] || undefined" class="member-avatar">
               {{ (member.name || '?').charAt(0) }}
             </el-avatar>
@@ -225,6 +255,88 @@
       </div>
     </Teleport>
 
+    <!-- User profile dialog -->
+    <el-dialog
+      v-model="userProfileVisible"
+      width="400px"
+      :show-close="true"
+      align-center
+      class="user-profile-dialog"
+    >
+      <template #header>
+        <span style="font-weight: 600">用户信息</span>
+      </template>
+      <div v-if="userProfileLoading" style="text-align: center; padding: 40px">
+        <el-text type="info">加载中...</el-text>
+      </div>
+      <div v-else-if="userProfile" class="user-profile-card">
+        <div class="profile-header">
+          <el-avatar
+            :size="64"
+            :src="userProfile.avatar || undefined"
+            class="profile-avatar profile-avatar-clickable"
+            @click="userProfile.avatar && previewProfileAvatar(userProfile.avatar)"
+          >
+            {{ (userProfile.name || '?').charAt(0) }}
+          </el-avatar>
+          <div class="profile-name-area">
+            <div class="profile-name">{{ userProfile.name }}</div>
+            <div v-if="userProfile.en_name" class="profile-en-name">{{ userProfile.en_name }}</div>
+            <div v-if="userProfile.job_title" class="profile-job-title">{{ userProfile.job_title }}</div>
+          </div>
+        </div>
+        <el-tooltip v-if="userProfile.description" placement="bottom" :show-after="300" :disabled="userProfile.description.length <= 80" popper-class="profile-description-tooltip">
+          <template #content>
+            <div style="max-width: 340px; white-space: pre-wrap; word-break: break-word;">{{ userProfile.description }}</div>
+          </template>
+          <div class="profile-description">{{ userProfile.description }}</div>
+        </el-tooltip>
+        <el-divider style="margin: 16px 0" />
+        <div class="profile-info-list">
+          <div v-if="userProfile.department_names" class="profile-info-item">
+            <span class="profile-info-label">部门</span>
+            <span class="profile-info-value">{{ formatJsonArray(userProfile.department_names) }}</span>
+          </div>
+          <div v-if="userProfile.city" class="profile-info-item">
+            <span class="profile-info-label">城市</span>
+            <span class="profile-info-value">{{ userProfile.city }}</span>
+          </div>
+          <div v-if="userProfile.employee_no" class="profile-info-item">
+            <span class="profile-info-label">工号</span>
+            <span class="profile-info-value">{{ userProfile.employee_no }}</span>
+          </div>
+          <div v-if="userProfile.email" class="profile-info-item">
+            <span class="profile-info-label">邮箱</span>
+            <span class="profile-info-value">{{ userProfile.email }}</span>
+          </div>
+          <div v-if="userProfile.work_station" class="profile-info-item">
+            <span class="profile-info-label">工位</span>
+            <span class="profile-info-value">{{ userProfile.work_station }}</span>
+          </div>
+          <div v-if="userProfile.gender" class="profile-info-item">
+            <span class="profile-info-label">性别</span>
+            <span class="profile-info-value">{{ formatGender(userProfile.gender) }}</span>
+          </div>
+          <div v-if="userProfile.join_time" class="profile-info-item">
+            <span class="profile-info-label">入职时间</span>
+            <span class="profile-info-value">{{ formatDate(userProfile.join_time) }}</span>
+          </div>
+          <div v-if="userProfile.msg_count" class="profile-info-item">
+            <span class="profile-info-label">消息数</span>
+            <span class="profile-info-value">{{ userProfile.msg_count }}</span>
+          </div>
+          <div v-if="userProfile.last_seen" class="profile-info-item">
+            <span class="profile-info-label">最后活跃</span>
+            <span class="profile-info-value">{{ formatDate(userProfile.last_seen) }}</span>
+          </div>
+        </div>
+        <el-divider style="margin: 16px 0" />
+        <div class="profile-actions">
+          <el-button type="primary" @click="handleProfilePrivateChat">发起私聊</el-button>
+        </div>
+      </div>
+    </el-dialog>
+
     <!-- Image preview -->
     <el-image-viewer
       v-if="previewVisible"
@@ -238,12 +350,14 @@
 <script setup lang="ts">
 import { ref, computed, inject, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChatDotRound, Close, ArrowRight, Refresh } from '@element-plus/icons-vue'
-import { getChats, getConversations, getMessageLogs, sendMessage, replyMessage, deleteMessage, getToken, getUserByOpenID, getChatMembers } from '../api/client'
+import { ChatDotRound, Close, ArrowRight, Refresh, PictureFilled, FolderOpened, Document } from '@element-plus/icons-vue'
+import { getChats, getConversations, getMessageLogs, sendMessage, replyMessage, deleteMessage, getToken, getUserByOpenID, getChatMembers, uploadImage, uploadFile } from '../api/client'
 import { ElMessage } from 'element-plus'
 
 const unreadMap = inject<Record<string, number>>('unreadMap', {})
 const clearChatUnread = inject<(chatId: string) => void>('clearChatUnread', () => {})
+const botInfo = inject<{ name: string; open_id: string; avatar_url: string }>('botInfo', { name: '', open_id: '', avatar_url: '' })
+const botDisplayName = computed(() => botInfo.name || '机器人')
 
 interface ChatItem {
   chat_id: string
@@ -266,10 +380,30 @@ interface Message {
   recalled?: boolean
 }
 
+interface UserProfile {
+  open_id: string
+  name: string
+  en_name: string
+  avatar: string
+  description: string
+  email: string
+  city: string
+  job_title: string
+  department_ids: string
+  department_names: string
+  work_station: string
+  employee_no: string
+  gender: number
+  join_time: number
+  msg_count: number
+  first_seen: string
+  last_seen: string
+}
+
 const route = useRoute()
 const router = useRouter()
 
-const activeTab = ref('group')
+const activeTab = ref('private')
 const groups = ref<ChatItem[]>([])
 const privateChats = ref<ChatItem[]>([])
 const searchText = ref('')
@@ -281,7 +415,17 @@ const sending = ref(false)
 const connected = ref(false)
 const messageContainer = ref<HTMLElement>()
 const editorRef = ref<HTMLElement>()
+const imageInputRef = ref<HTMLInputElement>()
+const fileInputRef = ref<HTMLInputElement>()
 const replyTo = ref<Message | null>(null)
+
+// Pending attachments (images/files)
+interface PendingFile {
+  file: File
+  type: 'image' | 'file'
+  previewUrl?: string
+}
+const pendingFiles = ref<PendingFile[]>([])
 const contextMenu = ref({ visible: false, x: 0, y: 0, msg: null as Message | null })
 
 // Members panel
@@ -342,6 +486,11 @@ const onMembersScroll = () => {
     loadChatMembers(false)
   }
 }
+
+// User profile dialog
+const userProfileVisible = ref(false)
+const userProfileLoading = ref(false)
+const userProfile = ref<UserProfile | null>(null)
 
 // Image preview
 const previewVisible = ref(false)
@@ -436,6 +585,89 @@ const fetchUserInfo = async (openId: string) => {
   }
 }
 
+const showUserProfile = async (openId: string) => {
+  if (!openId) return
+  userProfileVisible.value = true
+  userProfileLoading.value = true
+  userProfile.value = null
+  try {
+    const res = await getUserByOpenID(openId)
+    const user = res.data.data
+    if (user) {
+      userProfile.value = {
+        open_id: user.open_id || openId,
+        name: user.name || '',
+        en_name: user.en_name || '',
+        avatar: user.avatar || '',
+        description: user.description || '',
+        email: user.email || '',
+        city: user.city || '',
+        job_title: user.job_title || '',
+        department_ids: user.department_ids || '',
+        department_names: user.department_names || '',
+        work_station: user.work_station || '',
+        employee_no: user.employee_no || '',
+        gender: user.gender || 0,
+        join_time: user.join_time || 0,
+        msg_count: user.msg_count || 0,
+        first_seen: user.first_seen || '',
+        last_seen: user.last_seen || '',
+      }
+    }
+  } catch {
+    ElMessage.error('获取用户信息失败')
+    userProfileVisible.value = false
+  } finally {
+    userProfileLoading.value = false
+  }
+}
+
+const previewProfileAvatar = (avatarUrl: string) => {
+  previewList.value = [avatarUrl]
+  previewVisible.value = true
+}
+
+const handleProfilePrivateChat = () => {
+  if (!userProfile.value) return
+  const openId = userProfile.value.open_id
+  const name = userProfile.value.name || openId
+  userProfileVisible.value = false
+
+  // Check if already in private chats list
+  const existing = privateChats.value.find(c => c.sender_id === openId || c.chat_id === openId)
+  if (existing) {
+    activeTab.value = 'private'
+    switchChat(existing)
+    return
+  }
+  // Add as temporary private chat entry and switch to it
+  const tempChat: ChatItem = {
+    chat_id: openId,
+    name,
+    description: '新对话',
+    sender_id: openId,
+  }
+  privateChats.value.unshift(tempChat)
+  activeTab.value = 'private'
+  switchChat(tempChat)
+}
+
+const formatJsonArray = (s: string): string => {
+  try {
+    const arr = JSON.parse(s)
+    if (Array.isArray(arr)) return arr.join(' ')
+  } catch {}
+  return s
+}
+
+const formatGender = (g: number) => g === 1 ? '男' : g === 2 ? '女' : '未知'
+
+const formatDate = (t: string | number) => {
+  if (!t) return '-'
+  const d = typeof t === 'number' ? new Date(t * 1000) : new Date(t)
+  return d.toLocaleDateString()
+}
+
 const fetchAvatar = fetchUserInfo
 
 const fetchAvatars = (msgs: Message[]) => {
@@ -515,6 +747,22 @@ const renderContent = (content: string, msgType: string, messageId?: string): st
       }
     } catch {}
     return '[图片]'
+  }
+
+  // File message: {"file_key":"xxx","file_name":"xxx"}
+  if (msgType === 'file') {
+    try {
+      const parsed = JSON.parse(content)
+      if (parsed.file_key) {
+        const fileName = parsed.file_name || '文件'
+        if (messageId) {
+          const url = resourceUrl(messageId, parsed.file_key, 'file') + `&filename=${encodeURIComponent(fileName)}`
+          return `<a class="msg-file" href="${url}" download="${escapeHtml(fileName)}">📎 ${escapeHtml(fileName)}</a>`
+        }
+        return `📎 ${escapeHtml(fileName)}`
+      }
+    } catch {}
+    return '[文件]'
   }
 
   // Sticker message: {"file_key":"v2_xxx"}
@@ -732,6 +980,77 @@ const clearEditor = () => {
   if (editorRef.value) {
     editorRef.value.innerHTML = ''
   }
+}
+
+const handlePaste = (e: ClipboardEvent) => {
+  const items = e.clipboardData?.items
+  if (!items) return
+
+  const imageItems: DataTransferItem[] = []
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      imageItems.push(item)
+    }
+  }
+
+  if (imageItems.length > 0) {
+    e.preventDefault()
+    for (const item of imageItems) {
+      const file = item.getAsFile()
+      if (file) {
+        addPendingFile(file, 'image')
+      }
+    }
+  }
+}
+
+const addPendingFile = (file: File, type: 'image' | 'file') => {
+  const pf: PendingFile = { file, type }
+  if (type === 'image') {
+    pf.previewUrl = URL.createObjectURL(file)
+  }
+  pendingFiles.value.push(pf)
+}
+
+const removePendingFile = (idx: number) => {
+  const pf = pendingFiles.value[idx]
+  if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl)
+  pendingFiles.value.splice(idx, 1)
+}
+
+const clearPendingFiles = () => {
+  pendingFiles.value.forEach(pf => {
+    if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl)
+  })
+  pendingFiles.value = []
+}
+
+const triggerImagePicker = () => {
+  imageInputRef.value?.click()
+}
+
+const triggerFilePicker = () => {
+  fileInputRef.value?.click()
+}
+
+const handleImagePicked = (e: Event) => {
+  const input = e.target as HTMLInputElement
+  if (input.files) {
+    for (const file of input.files) {
+      addPendingFile(file, 'image')
+    }
+  }
+  input.value = ''
+}
+
+const handleFilePicked = (e: Event) => {
+  const input = e.target as HTMLInputElement
+  if (input.files) {
+    for (const file of input.files) {
+      addPendingFile(file, 'file')
+    }
+  }
+  input.value = ''
 }
 
 const handleEditorKeydown = (e: KeyboardEvent) => {
@@ -956,46 +1275,84 @@ const handleStartPrivateChat = async () => {
   switchChat(tempChat)
 }
 
+const sendOneMessage = async (msgType: string, content: string): Promise<string> => {
+  const idType = activeChatId.value.startsWith('ou_') ? 'open_id' : 'chat_id'
+  if (replyTo.value?.message_id) {
+    const res = await replyMessage({
+      message_id: replyTo.value.message_id,
+      msg_type: msgType,
+      content,
+    })
+    return res.data.message_id || ''
+  } else {
+    const res = await sendMessage({
+      receive_id: activeChatId.value,
+      receive_id_type: idType,
+      msg_type: msgType,
+      content,
+    })
+    return res.data.message_id || ''
+  }
+}
+
 const handleSend = async () => {
   const text = getEditorText()
-  if (!text || !activeChatId.value) return
+  const hasFiles = pendingFiles.value.length > 0
+  if ((!text && !hasFiles) || !activeChatId.value) return
 
   sending.value = true
   try {
-    const content = JSON.stringify({ text })
+    // Send text message first (if any)
+    if (text) {
+      const content = JSON.stringify({ text })
+      const msgId = await sendOneMessage('text', content)
+      messages.value.push({
+        message_id: msgId,
+        chat_id: activeChatId.value,
+        sender_id: '',
+        direction: 'out',
+        msg_type: 'text',
+        content,
+        created_at: new Date().toISOString(),
+      })
+    }
 
-    let msgId = ''
-    if (replyTo.value?.message_id) {
-      // Reply to a specific message
-      const res = await replyMessage({
-        message_id: replyTo.value.message_id,
-        msg_type: 'text',
-        content,
-      })
-      msgId = res.data.message_id || ''
-    } else {
-      // Send new message (detect if open_id or chat_id)
-      const idType = activeChatId.value.startsWith('ou_') ? 'open_id' : 'chat_id'
-      const res = await sendMessage({
-        receive_id: activeChatId.value,
-        receive_id_type: idType,
-        msg_type: 'text',
-        content,
-      })
-      msgId = res.data.message_id || ''
+    // Send each attachment
+    for (const pf of pendingFiles.value) {
+      if (pf.type === 'image') {
+        const uploadRes = await uploadImage(pf.file)
+        const imageKey = uploadRes.data.image_key
+        const content = JSON.stringify({ image_key: imageKey })
+        const msgId = await sendOneMessage('image', content)
+        messages.value.push({
+          message_id: msgId,
+          chat_id: activeChatId.value,
+          sender_id: '',
+          direction: 'out',
+          msg_type: 'image',
+          content,
+          created_at: new Date().toISOString(),
+        })
+      } else {
+        const uploadRes = await uploadFile(pf.file)
+        const fileKey = uploadRes.data.file_key
+        const content = JSON.stringify({ file_key: fileKey, file_name: pf.file.name })
+        const msgId = await sendOneMessage('file', content)
+        messages.value.push({
+          message_id: msgId,
+          chat_id: activeChatId.value,
+          sender_id: '',
+          direction: 'out',
+          msg_type: 'file',
+          content,
+          created_at: new Date().toISOString(),
+        })
+      }
     }
 
     clearEditor()
+    clearPendingFiles()
     replyTo.value = null
-    messages.value.push({
-      message_id: msgId,
-      chat_id: activeChatId.value,
-      sender_id: '',
-      direction: 'out',
-      msg_type: 'text',
-      content,
-      created_at: new Date().toISOString(),
-    })
     moveToTop(activeChatId.value)
     scrollToBottom()
   } catch (e: any) {
@@ -1282,6 +1639,12 @@ onUnmounted(() => {
   margin-top: 2px;
 }
 
+.message-avatar-out {
+  flex-shrink: 0;
+  margin-left: 8px;
+  margin-top: 2px;
+}
+
 .message-bubble {
   max-width: 65%;
   padding: 8px 12px;
@@ -1305,6 +1668,10 @@ onUnmounted(() => {
   margin-bottom: 4px;
   opacity: 0.7;
   gap: 12px;
+}
+
+.message-out .message-meta {
+  opacity: 0.9;
 }
 
 .message-text {
@@ -1336,6 +1703,23 @@ onUnmounted(() => {
   cursor: pointer;
   display: block;
   margin: 4px 0;
+}
+
+.message-text :deep(.msg-file) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: #f4f4f5;
+  border-radius: 4px;
+  color: #409eff;
+  text-decoration: none;
+  font-size: 13px;
+  transition: background 0.2s;
+}
+
+.message-text :deep(.msg-file:hover) {
+  background: #ecf5ff;
 }
 
 .reply-bar {
@@ -1371,10 +1755,79 @@ onUnmounted(() => {
   color: #606266;
 }
 
+.attachment-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px 0;
+  border-top: 1px solid #e4e7ed;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #f4f4f5;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #606266;
+}
+
+.attachment-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.attachment-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-remove {
+  cursor: pointer;
+  color: #909399;
+  transition: color 0.2s;
+}
+
+.attachment-remove:hover {
+  color: #f56c6c;
+}
+
 .input-area {
   display: flex;
+  align-items: flex-end;
   padding: 12px 16px;
   border-top: 1px solid #e4e7ed;
+}
+
+.input-area .attachment-preview + & {
+  border-top: none;
+}
+
+.input-actions {
+  display: flex;
+  gap: 4px;
+  margin-right: 8px;
+  padding-bottom: 4px;
+}
+
+.action-icon {
+  font-size: 20px;
+  color: #909399;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.action-icon:hover {
+  color: #409eff;
+  background: #ecf5ff;
 }
 
 
@@ -1523,6 +1976,113 @@ onUnmounted(() => {
   width: 0;
   min-width: 0;
   opacity: 0;
+}
+
+/* Clickable avatar */
+.message-avatar-clickable {
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.message-avatar-clickable:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.member-item-clickable {
+  cursor: pointer;
+}
+
+/* User profile card */
+.user-profile-card {
+  padding: 0 4px;
+}
+
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.profile-avatar {
+  flex-shrink: 0;
+}
+
+.profile-description {
+  font-size: 13px;
+  color: #606266;
+  margin-top: 12px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+.profile-avatar-clickable {
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.profile-avatar-clickable:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+}
+
+.profile-name-area {
+  flex: 1;
+  overflow: hidden;
+}
+
+.profile-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.profile-en-name {
+  font-size: 13px;
+  color: #909399;
+  margin-top: 2px;
+}
+
+.profile-job-title {
+  font-size: 13px;
+  color: #606266;
+  margin-top: 4px;
+}
+
+.profile-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.profile-info-item {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+}
+
+.profile-info-label {
+  width: 72px;
+  flex-shrink: 0;
+  color: #909399;
+}
+
+.profile-info-value {
+  color: #303133;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-actions {
+  display: flex;
+  justify-content: center;
 }
 </style>
 

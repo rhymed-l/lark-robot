@@ -106,7 +106,26 @@ func (s *UserService) UserCount() (int64, error) {
 }
 
 // SyncUser fetches the latest info from Lark API and updates the database.
+// If force is false and the user was updated within the last hour, it skips the sync.
 func (s *UserService) SyncUser(ctx context.Context, openID string) (*model.User, error) {
+	return s.syncUser(ctx, openID, false)
+}
+
+// SyncUserForce always syncs, ignoring the cooldown.
+func (s *UserService) SyncUserForce(ctx context.Context, openID string) (*model.User, error) {
+	return s.syncUser(ctx, openID, true)
+}
+
+func (s *UserService) syncUser(ctx context.Context, openID string, force bool) (*model.User, error) {
+	if !force {
+		// Skip if synced within the last hour
+		if existing, err := s.repo.GetByOpenID(openID); err == nil {
+			if time.Since(existing.UpdatedAt) < time.Hour {
+				return existing, nil
+			}
+		}
+	}
+
 	info, err := s.larkClient.GetUserInfo(ctx, openID)
 	if err != nil {
 		return nil, err
@@ -122,22 +141,111 @@ func (s *UserService) SyncUser(ctx context.Context, openID string) (*model.User,
 	return s.repo.GetByOpenID(openID)
 }
 
+// SyncResult holds the result of a batch user sync.
+type SyncResult struct {
+	Total     int      `json:"total"`
+	Synced    int      `json:"synced"`
+	Skipped   int      `json:"skipped"`
+	Failed    int      `json:"failed"`
+	FailedIDs []string `json:"failed_ids,omitempty"`
+}
+
 // SyncAllUsers re-fetches info from Lark API for all known users.
-func (s *UserService) SyncAllUsers(ctx context.Context) (int, error) {
-	users, _, err := s.repo.List(repository.UserQuery{Page: 1, PageSize: 10000})
-	if err != nil {
-		return 0, err
+func (s *UserService) SyncAllUsers(ctx context.Context) (*SyncResult, error) {
+	// Collect all open_ids by paginating through the database
+	var allOpenIDs []string
+	page := 1
+	const pageSize = 100
+	for {
+		users, _, err := s.repo.List(repository.UserQuery{Page: page, PageSize: pageSize})
+		if err != nil {
+			return nil, err
+		}
+		if len(users) == 0 {
+			break
+		}
+		for _, u := range users {
+			allOpenIDs = append(allOpenIDs, u.OpenID)
+		}
+		if len(users) < pageSize {
+			break
+		}
+		page++
 	}
 
-	synced := 0
-	for _, u := range users {
-		if _, err := s.SyncUser(ctx, u.OpenID); err != nil {
-			s.logger.Debug("failed to sync user", zap.String("open_id", u.OpenID), zap.Error(err))
-			continue
-		}
-		synced++
+	return s.syncByIDs(allOpenIDs, false)
+}
+
+// SyncByIDs syncs a specific list of users by their open_ids.
+// If force is true, it bypasses the 1-hour cooldown.
+func (s *UserService) SyncByIDs(ctx context.Context, openIDs []string, force bool) (*SyncResult, error) {
+	return s.syncByIDs(openIDs, force)
+}
+
+// syncByIDs is the shared implementation for batch syncing.
+func (s *UserService) syncByIDs(openIDs []string, force bool) (*SyncResult, error) {
+	result := &SyncResult{Total: len(openIDs)}
+	if len(openIDs) == 0 {
+		return result, nil
 	}
-	return synced, nil
+
+	// Use a detached context so sync continues even if the HTTP request times out
+	syncCtx := context.Background()
+
+	// Sync concurrently with limited workers
+	workers := 5
+	if len(openIDs) < workers {
+		workers = len(openIDs)
+	}
+
+	type syncRes struct {
+		ok  bool
+		err error
+		id  string
+	}
+
+	ch := make(chan string, len(openIDs))
+	results := make(chan syncRes, len(openIDs))
+
+	for i := 0; i < workers; i++ {
+		go func() {
+			for openID := range ch {
+				var r syncRes
+				r.id = openID
+				// Retry once on failure (handles transient rate limiting)
+				_, err := s.syncUser(syncCtx, openID, force)
+				if err != nil {
+					time.Sleep(500 * time.Millisecond)
+					_, err = s.syncUser(syncCtx, openID, force)
+				}
+				r.ok = err == nil
+				r.err = err
+				results <- r
+			}
+		}()
+	}
+
+	for _, id := range openIDs {
+		ch <- id
+	}
+	close(ch)
+
+	for i := 0; i < len(openIDs); i++ {
+		r := <-results
+		if r.ok {
+			result.Synced++
+		} else {
+			result.Failed++
+			result.FailedIDs = append(result.FailedIDs, r.id)
+			s.logger.Debug("failed to sync user", zap.String("open_id", r.id), zap.Error(r.err))
+		}
+	}
+
+	s.logger.Info("user sync completed",
+		zap.Int("synced", result.Synced),
+		zap.Int("failed", result.Failed),
+		zap.Int("total", result.Total))
+	return result, nil
 }
 
 func (s *UserService) setCache(info *larkbot.UserInfo) {
@@ -148,38 +256,48 @@ func (s *UserService) setCache(info *larkbot.UserInfo) {
 
 func userToInfo(u *model.User) *larkbot.UserInfo {
 	return &larkbot.UserInfo{
-		OpenID:       u.OpenID,
-		UnionID:      u.UnionID,
-		UserID:       u.UserID,
-		Name:         u.Name,
-		EnName:       u.EnName,
-		Avatar:       u.Avatar,
-		Email:        u.Email,
-		JobTitle:     u.JobTitle,
-		WorkStation:  u.WorkStation,
-		EmployeeNo:   u.EmployeeNo,
-		Gender:       u.Gender,
-		LeaderUserID: u.LeaderUserID,
-		JoinTime:     u.JoinTime,
+		OpenID:          u.OpenID,
+		UnionID:         u.UnionID,
+		UserID:          u.UserID,
+		Name:            u.Name,
+		EnName:          u.EnName,
+		Avatar:          u.Avatar,
+		Description:     u.Description,
+		Email:           u.Email,
+		City:            u.City,
+		JobTitle:        u.JobTitle,
+		WorkStation:     u.WorkStation,
+		EmployeeNo:      u.EmployeeNo,
+		Gender:          u.Gender,
+		LeaderUserID:    u.LeaderUserID,
+		DepartmentIDs:   u.DepartmentIDs,
+		DepartmentNames: u.DepartmentNames,
+		CustomAttrs:     u.CustomAttrs,
+		JoinTime:        u.JoinTime,
 	}
 }
 
 func infoToUser(info *larkbot.UserInfo, now time.Time) *model.User {
 	return &model.User{
-		OpenID:       info.OpenID,
-		UnionID:      info.UnionID,
-		UserID:       info.UserID,
-		Name:         info.Name,
-		EnName:       info.EnName,
-		Avatar:       info.Avatar,
-		Email:        info.Email,
-		JobTitle:     info.JobTitle,
-		WorkStation:  info.WorkStation,
-		EmployeeNo:   info.EmployeeNo,
-		Gender:       info.Gender,
-		LeaderUserID: info.LeaderUserID,
-		JoinTime:     info.JoinTime,
-		FirstSeen:    now,
-		LastSeen:     now,
+		OpenID:          info.OpenID,
+		UnionID:         info.UnionID,
+		UserID:          info.UserID,
+		Name:            info.Name,
+		EnName:          info.EnName,
+		Avatar:          info.Avatar,
+		Description:     info.Description,
+		Email:           info.Email,
+		City:            info.City,
+		JobTitle:        info.JobTitle,
+		WorkStation:     info.WorkStation,
+		EmployeeNo:      info.EmployeeNo,
+		Gender:          info.Gender,
+		LeaderUserID:    info.LeaderUserID,
+		DepartmentIDs:   info.DepartmentIDs,
+		DepartmentNames: info.DepartmentNames,
+		CustomAttrs:     info.CustomAttrs,
+		JoinTime:        info.JoinTime,
+		FirstSeen:       now,
+		LastSeen:        now,
 	}
 }

@@ -88,6 +88,46 @@ func (c *LarkClient) DeleteMessage(ctx context.Context, messageID string) error 
 	return nil
 }
 
+// UploadImage uploads an image to Lark and returns the image_key.
+func (c *LarkClient) UploadImage(ctx context.Context, imageReader io.Reader) (string, error) {
+	req := larkim.NewCreateImageReqBuilder().
+		Body(larkim.NewCreateImageReqBodyBuilder().
+			ImageType("message").
+			Image(imageReader).
+			Build()).
+		Build()
+
+	resp, err := c.Client.Im.Image.Create(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("upload image failed: %w", err)
+	}
+	if !resp.Success() {
+		return "", fmt.Errorf("upload image error: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+	return *resp.Data.ImageKey, nil
+}
+
+// UploadFile uploads a file to Lark and returns the file_key.
+// fileType: opus/mp4/pdf/doc/xls/ppt/stream
+func (c *LarkClient) UploadFile(ctx context.Context, fileType, fileName string, fileReader io.Reader) (string, error) {
+	req := larkim.NewCreateFileReqBuilder().
+		Body(larkim.NewCreateFileReqBodyBuilder().
+			FileType(fileType).
+			FileName(fileName).
+			File(fileReader).
+			Build()).
+		Build()
+
+	resp, err := c.Client.Im.File.Create(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("upload file failed: %w", err)
+	}
+	if !resp.Success() {
+		return "", fmt.Errorf("upload file error: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+	return *resp.Data.FileKey, nil
+}
+
 // SendTextMessage is a convenience method for sending plain text.
 func (c *LarkClient) SendTextMessage(ctx context.Context, receiveID, receiveIDType, text string) (string, error) {
 	content := fmt.Sprintf(`{"text":"%s"}`, text)

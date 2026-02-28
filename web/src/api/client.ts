@@ -35,6 +35,9 @@ export const logout = () => {
   window.location.href = '/login'
 }
 
+// Bot info
+export const getBotInfo = () => api.get('/bot/info')
+
 // Dashboard
 export const getDashboardStats = () => api.get('/dashboard/stats')
 
@@ -96,7 +99,8 @@ export const toggleAutoReplyRule = (id: number) => api.post(`/auto-reply-rules/$
 // Users
 export const getUsers = (params?: { page?: number; page_size?: number; keyword?: string; sort_by?: string; sort_dir?: string }) =>
   api.get('/users', { params })
-export const syncUsers = () => api.post('/users/sync')
+export const syncUsers = (openIds?: string[]) =>
+  api.post('/users/sync', openIds ? { open_ids: openIds } : {})
 export const getUserByOpenID = (openId: string) => api.get(`/users/${openId}`)
 
 // Scheduled tasks
@@ -120,5 +124,27 @@ export const updateScheduledTask = (id: number, data: {
 export const deleteScheduledTask = (id: number) => api.delete(`/scheduled-tasks/${id}`)
 export const toggleScheduledTask = (id: number) => api.post(`/scheduled-tasks/${id}/toggle`)
 export const runScheduledTask = (id: number) => api.post(`/scheduled-tasks/${id}/run`)
+
+// Upload
+export const uploadImage = (file: File) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post('/upload/image', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
+  })
+}
+
+export const uploadFile = (file: File, fileType?: string) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  if (fileType) {
+    formData.append('file_type', fileType)
+  }
+  return api.post('/upload/file', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
+  })
+}
 
 export default api

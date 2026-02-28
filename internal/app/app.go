@@ -72,7 +72,7 @@ func New(cfg *config.Config) (*App, error) {
 	if err := larkClient.FetchBotInfo(context.Background()); err != nil {
 		logger.Warn("failed to fetch bot info", zap.Error(err))
 	} else {
-		logger.Info("bot info loaded", zap.String("open_id", larkClient.BotOpenID))
+		logger.Info("bot info loaded", zap.String("open_id", larkClient.BotOpenID), zap.String("name", larkClient.BotName))
 	}
 
 	// 5. Create services
@@ -219,6 +219,7 @@ func New(cfg *config.Config) (*App, error) {
 		AuthUsername:      cfg.Auth.Username,
 		AuthPassword:      cfg.Auth.Password,
 		AuthSecret:        cfg.Auth.Secret,
+		LarkClient:       larkClient,
 		ChatService:      chatService,
 		MessageService:   msgService,
 		SchedulerService: schedulerService,

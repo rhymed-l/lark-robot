@@ -21,9 +21,9 @@ func (r *UserRepo) Upsert(user *model.User) error {
 	return r.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "open_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"union_id", "user_id", "name", "en_name", "avatar",
-			"email", "job_title", "work_station", "employee_no",
-			"gender", "leader_user_id", "join_time",
+			"union_id", "user_id", "name", "en_name", "avatar", "description",
+			"email", "city", "job_title", "work_station", "employee_no",
+			"gender", "leader_user_id", "department_ids", "department_names", "custom_attrs", "join_time",
 			"last_seen", "updated_at",
 		}),
 	}).Create(user).Error

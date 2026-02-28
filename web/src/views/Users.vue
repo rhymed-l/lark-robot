@@ -15,7 +15,15 @@
             <el-button @click="handleSearch">搜索</el-button>
           </template>
         </el-input>
-        <el-button type="primary" @click="handleSync" :loading="syncing">
+        <el-button
+          v-if="lastFailedIDs.length > 0"
+          type="warning"
+          @click="handleSync(lastFailedIDs)"
+          :loading="syncing"
+        >
+          重试失败 ({{ lastFailedIDs.length }})
+        </el-button>
+        <el-button type="primary" @click="handleSync()" :loading="syncing">
           从飞书同步
         </el-button>
       </div>
@@ -47,7 +55,18 @@
             <span style="font-size: 12px">{{ row.email || '-' }}</span>
           </template>
         </el-table-column>
+        <el-table-column prop="city" label="城市" width="100" sortable="custom" />
         <el-table-column prop="work_station" label="工位" width="100" sortable="custom" />
+        <el-table-column prop="description" label="描述" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="ellipsis-cell">{{ row.description || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="部门" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="ellipsis-cell">{{ formatDepartments(row.department_names || row.department_ids) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="gender" label="性别" width="60">
           <template #default="{ row }">
             {{ row.gender === 1 ? '男' : row.gender === 2 ? '女' : '-' }}
@@ -62,6 +81,19 @@
         <el-table-column prop="last_seen" label="最后活跃" width="170" sortable="custom">
           <template #default="{ row }">
             {{ formatTime(row.last_seen) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="80" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              type="primary"
+              size="small"
+              link
+              :loading="syncingUser === row.open_id"
+              @click="handleSyncOne(row.open_id)"
+            >
+              同步
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -94,12 +126,16 @@ interface User {
   name: string
   en_name: string
   avatar: string
+  description: string
   email: string
+  city: string
   job_title: string
   work_station: string
   employee_no: string
   gender: number
   leader_user_id: string
+  department_ids: string
+  custom_attrs: string
   join_time: number
   first_seen: string
   last_seen: string
@@ -140,17 +176,44 @@ const handleSearch = () => {
   loadUsers()
 }
 
-const handleSync = async () => {
+const lastFailedIDs = ref<string[]>([])
+const syncingUser = ref('')
+
+const handleSync = async (retryIds?: string[]) => {
   syncing.value = true
   try {
-    const res = await syncUsers()
-    ElMessage.success(`同步完成，已更新 ${res.data.synced} 个用户`)
+    const res = await syncUsers(retryIds)
+    const { synced, failed, failed_ids, total } = res.data
+    lastFailedIDs.value = failed_ids || []
+
+    if (failed > 0) {
+      ElMessage.warning(`同步完成：成功 ${synced}/${total}，失败 ${failed} 个`)
+    } else {
+      ElMessage.success(`同步完成，已更新 ${synced} 个用户`)
+    }
     page.value = 1
     await loadUsers()
   } catch (e) {
     ElMessage.error('同步失败')
   } finally {
     syncing.value = false
+  }
+}
+
+const handleSyncOne = async (openId: string) => {
+  syncingUser.value = openId
+  try {
+    const res = await syncUsers([openId])
+    if (res.data.synced > 0) {
+      ElMessage.success('同步成功')
+      await loadUsers()
+    } else {
+      ElMessage.error('同步失败')
+    }
+  } catch {
+    ElMessage.error('同步失败')
+  } finally {
+    syncingUser.value = ''
   }
 }
 
@@ -172,6 +235,16 @@ const handleSortChange = ({ prop, order }: { prop: string; order: string | null 
   loadUsers()
 }
 
+const formatDepartments = (deptIds: string) => {
+  if (!deptIds) return '-'
+  try {
+    const ids = JSON.parse(deptIds) as string[]
+    return ids.length > 0 ? ids.join(', ') : '-'
+  } catch {
+    return deptIds
+  }
+}
+
 const formatTime = (t: string) => {
   if (!t) return '-'
   return new Date(t).toLocaleString()
@@ -190,6 +263,12 @@ onMounted(loadUsers)
   display: flex;
   flex-direction: column;
   height: calc(100vh - 40px);
+}
+.ellipsis-cell {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .id-cell {
   font-family: monospace;

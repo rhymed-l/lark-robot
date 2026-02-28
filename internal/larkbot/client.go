@@ -10,9 +10,11 @@ import (
 )
 
 type LarkClient struct {
-	Client    *lark.Client
-	AppID     string
-	BotOpenID string // Bot's own open_id, fetched at startup
+	Client       *lark.Client
+	AppID        string
+	BotOpenID    string // Bot's own open_id, fetched at startup
+	BotName      string // Bot's display name (app_name)
+	BotAvatarURL string // Bot's avatar URL
 }
 
 func NewLarkClient(appID, appSecret, baseURL string) *LarkClient {
@@ -36,7 +38,9 @@ func (c *LarkClient) FetchBotInfo(ctx context.Context) error {
 
 	var result struct {
 		Bot struct {
-			OpenID string `json:"open_id"`
+			OpenID    string `json:"open_id"`
+			AppName   string `json:"app_name"`
+			AvatarURL string `json:"avatar_url"`
 		} `json:"bot"`
 	}
 	if err := json.Unmarshal(resp.RawBody, &result); err != nil {
@@ -45,5 +49,7 @@ func (c *LarkClient) FetchBotInfo(ctx context.Context) error {
 	if result.Bot.OpenID != "" {
 		c.BotOpenID = result.Bot.OpenID
 	}
+	c.BotName = result.Bot.AppName
+	c.BotAvatarURL = result.Bot.AvatarURL
 	return nil
 }

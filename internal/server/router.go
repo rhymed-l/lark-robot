@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"lark-robot/internal/broadcast"
+	"lark-robot/internal/larkbot"
 	"lark-robot/internal/service"
 )
 
@@ -19,10 +20,12 @@ type Router struct {
 	authAPI          *AuthAPI
 	dashboardAPI     *DashboardAPI
 	messageAPI       *MessageAPI
+	uploadAPI        *UploadAPI
 	chatAPI          *ChatAPI
 	userAPI          *UserAPI
 	autoReplyAPI     *AutoReplyAPI
 	scheduledTaskAPI *ScheduledTaskAPI
+	larkClient       *larkbot.LarkClient
 	authSecret       string
 	frontendFS       http.FileSystem
 	embeddedFS       fs.FS
@@ -34,6 +37,7 @@ type RouterConfig struct {
 	AuthUsername      string
 	AuthPassword      string
 	AuthSecret        string
+	LarkClient       *larkbot.LarkClient
 	ChatService      *service.ChatService
 	MessageService   *service.MessageService
 	SchedulerService *service.SchedulerService
@@ -55,10 +59,12 @@ func NewRouter(cfg RouterConfig) *Router {
 		authAPI:            NewAuthAPI(cfg.AuthUsername, cfg.AuthPassword, cfg.AuthSecret),
 		dashboardAPI:       NewDashboardAPI(cfg.ChatService, cfg.MessageService, cfg.SchedulerService, cfg.ReplyService, cfg.UserService),
 		messageAPI:         NewMessageAPI(cfg.MessageService, cfg.Broadcaster),
+		uploadAPI:          NewUploadAPI(cfg.LarkClient),
 		chatAPI:            NewChatAPI(cfg.ChatService),
 		userAPI:            NewUserAPI(cfg.UserService),
 		autoReplyAPI:       NewAutoReplyAPI(cfg.ReplyService),
 		scheduledTaskAPI:   NewScheduledTaskAPI(cfg.SchedulerService),
+		larkClient:         cfg.LarkClient,
 		authSecret:         cfg.AuthSecret,
 		frontendFS:         cfg.FrontendFS,
 		embeddedFS:         cfg.EmbeddedFS,
@@ -83,6 +89,15 @@ func (r *Router) setupRoutes() {
 	authed := r.Engine.Group("/api")
 	authed.Use(AuthMiddleware(r.authSecret))
 	{
+		// Bot info
+		authed.GET("/bot/info", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"name":       r.larkClient.BotName,
+				"open_id":    r.larkClient.BotOpenID,
+				"avatar_url": r.larkClient.BotAvatarURL,
+			})
+		})
+
 		// Dashboard
 		authed.GET("/dashboard/stats", r.dashboardAPI.GetStats)
 
@@ -94,6 +109,10 @@ func (r *Router) setupRoutes() {
 		authed.GET("/messages/conversations", r.messageAPI.Conversations)
 		authed.GET("/messages/stream", r.messageAPI.Stream)
 		authed.GET("/images/:message_id/:file_key", r.messageAPI.GetImage)
+
+		// Upload
+		authed.POST("/upload/image", r.uploadAPI.UploadImage)
+		authed.POST("/upload/file", r.uploadAPI.UploadFile)
 
 		// Chats (groups)
 		authed.GET("/chats", r.chatAPI.List)

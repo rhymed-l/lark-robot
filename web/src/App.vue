@@ -18,7 +18,7 @@ import { h, reactive, computed, provide, onMounted, onUnmounted, watch } from 'v
 import { useRoute, useRouter } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import Sidebar from './components/Sidebar.vue'
-import { getToken, getChats, getConversations } from './api/client'
+import { getToken, getChats, getConversations, getBotInfo } from './api/client'
 
 const router = useRouter()
 
@@ -34,12 +34,24 @@ const unreadMap = reactive<Record<string, number>>({})
 // Total unread count for sidebar badge
 const totalUnread = computed(() => Object.values(unreadMap).reduce((sum, n) => sum + n, 0))
 
+// Bot info
+const botInfo = reactive({ name: '', open_id: '', avatar_url: '' })
+const loadBotInfo = async () => {
+  try {
+    const res = await getBotInfo()
+    Object.assign(botInfo, res.data)
+  } catch {
+    // ignore
+  }
+}
+
 // Provide to child components
 provide('unreadMap', unreadMap)
 provide('totalUnread', totalUnread)
 provide('clearChatUnread', (chatId: string) => {
   delete unreadMap[chatId]
 })
+provide('botInfo', botInfo)
 
 let eventSource: EventSource | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -147,7 +159,7 @@ const connectGlobalSSE = () => {
 // Reconnect SSE when navigating away from login (i.e., after login)
 watch(isLoginPage, async (isLogin) => {
   if (!isLogin) {
-    await loadChatNames()
+    await Promise.all([loadChatNames(), loadBotInfo()])
     connectGlobalSSE()
   }
 })
@@ -174,7 +186,7 @@ onMounted(async () => {
     Notification.requestPermission()
   }
   if (!isLoginPage.value) {
-    await loadChatNames()
+    await Promise.all([loadChatNames(), loadBotInfo()])
     connectGlobalSSE()
   }
 })
